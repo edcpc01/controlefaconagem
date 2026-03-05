@@ -1,37 +1,110 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { listarNFsEntrada, criarNFEntrada, deletarNFEntrada } from '../lib/faconagem'
+import { listarNFsEntrada, criarNFEntrada, editarNFEntrada, deletarNFEntrada, extrairDadosNFdoPDF } from '../lib/faconagem'
 import { useAuth } from '../lib/AuthContext'
 import { format } from 'date-fns'
 
 function Toast({ toasts }) {
+  return <div className="toast-container">{toasts.map(t => <div key={t.id} className={`toast ${t.type}`}>{t.msg}</div>)}</div>
+}
+
+const EMPTY_FORM = { data_emissao: '', numero_nf: '', codigo_material: '', lote: '', volume_kg: '', valor_unitario: '' }
+
+const fmt        = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
+const fmtCurrency = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 6 })
+
+// ── Formulário reutilizável (criar + editar) ──────────────────────
+function NFForm({ form, set, onSubmit, onCancel, loading, extracting, onPDFUpload, pdfInputRef, isEdit }) {
   return (
-    <div className="toast-container">
-      {toasts.map(t => (
-        <div key={t.id} className={`toast ${t.type}`}>{t.msg}</div>
-      ))}
+    <div>
+      {/* Upload PDF */}
+      {!isEdit && (
+        <div
+          className="pdf-dropzone"
+          onClick={() => pdfInputRef.current?.click()}
+          onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('drag-over') }}
+          onDragLeave={e => e.currentTarget.classList.remove('drag-over')}
+          onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove('drag-over'); const f = e.dataTransfer.files[0]; if (f) onPDFUpload(f) }}
+        >
+          <input ref={pdfInputRef} type="file" accept="application/pdf" style={{display:'none'}} onChange={e => e.target.files[0] && onPDFUpload(e.target.files[0])} />
+          {extracting ? (
+            <div style={{display:'flex', alignItems:'center', gap:10}}>
+              <div className="spinner" style={{width:20, height:20, marginBottom:0}} />
+              <span style={{color:'var(--accent)', fontSize:13}}>Extraindo dados da NF...</span>
+            </div>
+          ) : (
+            <div style={{textAlign:'center'}}>
+              <div style={{fontSize:28, marginBottom:4}}>📄</div>
+              <div style={{fontSize:13, color:'var(--text)', fontWeight:600}}>Importar PDF da NF</div>
+              <div style={{fontSize:11, color:'var(--text-dim)', marginTop:2}}>Clique ou arraste o arquivo PDF para preencher automaticamente</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="form-grid" style={{marginTop: isEdit ? 0 : 16}}>
+        <div className="form-group">
+          <label className="form-label">Data de Emissão *</label>
+          <input type="date" className="form-input" value={form.data_emissao} onChange={e => set('data_emissao', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Número da NF *</label>
+          <input type="text" className="form-input" placeholder="Ex: 99733" value={form.numero_nf} onChange={e => set('numero_nf', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Código do Material *</label>
+          <input type="text" className="form-input" placeholder="Ex: 140911" value={form.codigo_material} onChange={e => set('codigo_material', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Lote POY *</label>
+          <input type="text" className="form-input" placeholder="Ex: 53274S" value={form.lote} onChange={e => set('lote', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Volume (kg) *</label>
+          <input type="number" step="0.001" min="0" className="form-input" placeholder="0,000" value={form.volume_kg} onChange={e => set('volume_kg', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Valor Unitário (R$) *</label>
+          <input type="number" step="0.000001" min="0" className="form-input" placeholder="0,000000" value={form.valor_unitario} onChange={e => set('valor_unitario', e.target.value)} />
+        </div>
+      </div>
+
+      {form.volume_kg && form.valor_unitario && (
+        <div className="abatimento-box" style={{marginTop:16}}>
+          <div className="abatimento-row">
+            <span className="abatimento-label">Valor Total da NF</span>
+            <span className="abatimento-value highlight">
+              R$ {(parseFloat(form.volume_kg || 0) * parseFloat(form.valor_unitario || 0)).toLocaleString('pt-BR', {minimumFractionDigits:2})}
+            </span>
+          </div>
+        </div>
+      )}
+
+      <div style={{display:'flex', justifyContent:'flex-end', gap:10, marginTop:20}}>
+        {onCancel && <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>}
+        <button className="btn btn-primary" onClick={onSubmit} disabled={loading}>
+          {loading ? 'Salvando...' : isEdit ? '✓ Salvar Alterações' : '+ Cadastrar NF'}
+        </button>
+      </div>
     </div>
   )
 }
 
-const EMPTY_FORM = {
-  data_emissao: '',
-  numero_nf: '',
-  codigo_material: '',
-  lote: '',
-  volume_kg: '',
-  valor_unitario: '',
-}
-
+// ── Página ────────────────────────────────────────────────────────
 export default function EntradaPage() {
-  const { user } = useAuth()
-  const navigate = useNavigate()
-  const [nfs, setNfs] = useState([])
-  const [form, setForm] = useState(EMPTY_FORM)
-  const [loading, setLoading] = useState(false)
+  const { user }   = useAuth()
+  const navigate   = useNavigate()
+  const pdfRef     = useRef()
+  const [nfs, setNfs]                 = useState([])
+  const [form, setForm]               = useState(EMPTY_FORM)
+  const [loading, setLoading]         = useState(false)
+  const [extracting, setExtracting]   = useState(false)
   const [loadingList, setLoadingList] = useState(true)
-  const [toasts, setToasts] = useState([])
+  const [toasts, setToasts]           = useState([])
   const [confirmDelete, setConfirmDelete] = useState(null)
+  const [editando, setEditando]       = useState(null)  // NF sendo editada
+  const [editForm, setEditForm]       = useState(EMPTY_FORM)
+  const [editLoading, setEditLoading] = useState(false)
 
   const toast = (msg, type = 'success') => {
     const id = Date.now()
@@ -47,20 +120,50 @@ export default function EntradaPage() {
   useEffect(() => { load() }, [])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const setEdit = (k, v) => setEditForm(f => ({ ...f, [k]: v }))
 
+  // ── PDF Upload + Extração ──
+  const handlePDFUpload = async (file) => {
+    setExtracting(true)
+    try {
+      const base64 = await new Promise((res, rej) => {
+        const r = new FileReader()
+        r.onload = () => res(r.result.split(',')[1])
+        r.onerror = () => rej(new Error('Erro ao ler arquivo'))
+        r.readAsDataURL(file)
+      })
+      const dados = await extrairDadosNFdoPDF(base64)
+      setForm({
+        data_emissao:    dados.data_emissao   || '',
+        numero_nf:       dados.numero_nf      || '',
+        codigo_material: dados.codigo_material || '',
+        lote:            dados.lote           || '',
+        volume_kg:       dados.volume_kg      != null ? String(dados.volume_kg) : '',
+        valor_unitario:  dados.valor_unitario != null ? String(dados.valor_unitario) : '',
+      })
+      toast('Dados extraídos com sucesso! Confira os campos.')
+    } catch (e) {
+      toast('Erro ao extrair dados do PDF. Preencha manualmente.', 'error')
+    } finally {
+      setExtracting(false)
+      if (pdfRef.current) pdfRef.current.value = ''
+    }
+  }
+
+  // ── Criar NF ──
   const handleSubmit = async () => {
     if (!form.data_emissao || !form.numero_nf || !form.codigo_material || !form.lote || !form.volume_kg || !form.valor_unitario) {
-      toast('Preencha todos os campos.', 'error'); return
+      toast('Preencha todos os campos obrigatórios.', 'error'); return
     }
     setLoading(true)
     try {
       await criarNFEntrada({
-        data_emissao: form.data_emissao,
-        numero_nf: form.numero_nf.trim(),
+        data_emissao:    form.data_emissao,
+        numero_nf:       form.numero_nf.trim(),
         codigo_material: form.codigo_material.trim(),
-        lote: form.lote.trim(),
-        volume_kg: parseFloat(form.volume_kg),
-        valor_unitario: parseFloat(form.valor_unitario),
+        lote:            form.lote.trim(),
+        volume_kg:       parseFloat(form.volume_kg),
+        valor_unitario:  parseFloat(form.valor_unitario),
       }, user)
       toast('NF cadastrada com sucesso!')
       setForm(EMPTY_FORM)
@@ -72,6 +175,44 @@ export default function EntradaPage() {
     }
   }
 
+  // ── Editar NF ──
+  const abrirEditar = (nf) => {
+    setEditando(nf)
+    setEditForm({
+      data_emissao:    nf.data_emissao || '',
+      numero_nf:       nf.numero_nf || '',
+      codigo_material: nf.codigo_material || '',
+      lote:            nf.lote || '',
+      volume_kg:       String(nf.volume_kg || ''),
+      valor_unitario:  String(nf.valor_unitario || ''),
+    })
+  }
+
+  const handleEditar = async () => {
+    if (!editForm.data_emissao || !editForm.numero_nf || !editForm.codigo_material || !editForm.lote || !editForm.volume_kg || !editForm.valor_unitario) {
+      toast('Preencha todos os campos.', 'error'); return
+    }
+    setEditLoading(true)
+    try {
+      await editarNFEntrada(editando.id, {
+        data_emissao:    editForm.data_emissao,
+        numero_nf:       editForm.numero_nf.trim(),
+        codigo_material: editForm.codigo_material.trim(),
+        lote:            editForm.lote.trim(),
+        volume_kg:       parseFloat(editForm.volume_kg),
+        valor_unitario:  parseFloat(editForm.valor_unitario),
+      }, user)
+      toast('NF atualizada!')
+      setEditando(null)
+      load()
+    } catch (e) {
+      toast(e.message || 'Erro ao editar NF.', 'error')
+    } finally {
+      setEditLoading(false)
+    }
+  }
+
+  // ── Deletar NF ──
   const handleDelete = async (id) => {
     try {
       await deletarNFEntrada(id, confirmDelete.numero_nf, user)
@@ -83,62 +224,25 @@ export default function EntradaPage() {
     setConfirmDelete(null)
   }
 
-  const fmt = (n) => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
-  const fmtCurrency = (n) => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 6 })
-
   return (
     <div>
       <div className="page-header">
         <div className="page-title"><span>↓</span> NF de Entrada</div>
-        <div className="page-sub">Cadastro de notas fiscais de entrada de material</div>
+        <div className="page-sub">Cadastro de notas fiscais de entrada — importe o PDF para preenchimento automático</div>
       </div>
 
-      {/* Formulário */}
+      {/* Formulário de cadastro */}
       <div className="card" style={{marginBottom:24}}>
         <div className="card-title">Nova NF de Entrada</div>
-        <div className="form-grid">
-          <div className="form-group">
-            <label className="form-label">Data de Emissão *</label>
-            <input type="date" className="form-input" value={form.data_emissao} onChange={e => set('data_emissao', e.target.value)} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Número da NF *</label>
-            <input type="text" className="form-input" placeholder="Ex: 98565" value={form.numero_nf} onChange={e => set('numero_nf', e.target.value)} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Código do Material *</label>
-            <input type="text" className="form-input" placeholder="Ex: 140911" value={form.codigo_material} onChange={e => set('codigo_material', e.target.value)} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Lote *</label>
-            <input type="text" className="form-input" placeholder="Ex: 4527" value={form.lote} onChange={e => set('lote', e.target.value)} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Volume (kg) *</label>
-            <input type="number" step="0.0001" min="0" className="form-input" placeholder="0,0000" value={form.volume_kg} onChange={e => set('volume_kg', e.target.value)} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Valor Unitário (R$) *</label>
-            <input type="number" step="0.000001" min="0" className="form-input" placeholder="0,000000" value={form.valor_unitario} onChange={e => set('valor_unitario', e.target.value)} />
-          </div>
-        </div>
-
-        {form.volume_kg && form.valor_unitario && (
-          <div className="abatimento-box" style={{marginTop:16}}>
-            <div className="abatimento-row">
-              <span className="abatimento-label">Valor Total</span>
-              <span className="abatimento-value highlight">
-                R$ {(parseFloat(form.volume_kg || 0) * parseFloat(form.valor_unitario || 0)).toLocaleString('pt-BR', {minimumFractionDigits:2})}
-              </span>
-            </div>
-          </div>
-        )}
-
-        <div style={{display:'flex', justifyContent:'flex-end', marginTop:20}}>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={loading}>
-            {loading ? 'Salvando...' : '+ Cadastrar NF'}
-          </button>
-        </div>
+        <NFForm
+          form={form} set={set}
+          onSubmit={handleSubmit}
+          loading={loading}
+          extracting={extracting}
+          onPDFUpload={handlePDFUpload}
+          pdfInputRef={pdfRef}
+          isEdit={false}
+        />
       </div>
 
       {/* Lista de NFs */}
@@ -154,11 +258,11 @@ export default function EntradaPage() {
                   <th>NF</th>
                   <th>Emissão</th>
                   <th>Cód. Material</th>
-                  <th>Lote</th>
-                  <th className="td-right">Volume Total (kg)</th>
+                  <th>Lote POY</th>
+                  <th className="td-right">Volume (kg)</th>
                   <th className="td-right">Saldo (kg)</th>
                   <th className="td-right">V. Unitário</th>
-                  <th></th>
+                  <th style={{width:100}}></th>
                 </tr>
               </thead>
               <tbody>
@@ -176,9 +280,12 @@ export default function EntradaPage() {
                       {fmt(nf.volume_saldo_kg)}
                     </td>
                     <td className="td-right td-mono">{fmtCurrency(nf.valor_unitario)}</td>
-                    <td style={{display:'flex', gap:6}}>
-                      <button className="btn btn-ghost btn-sm" title="Ver detalhes" onClick={() => navigate(`/nf/${nf.id}`)}>🔍</button>
-                      <button className="btn btn-danger btn-sm" onClick={() => setConfirmDelete(nf)}>✕</button>
+                    <td>
+                      <div style={{display:'flex', gap:4}}>
+                        <button className="btn btn-ghost btn-sm" title="Ver detalhes" onClick={() => navigate(`/nf/${nf.id}`)}>🔍</button>
+                        <button className="btn btn-ghost btn-sm" title="Editar" onClick={() => abrirEditar(nf)}>✏</button>
+                        <button className="btn btn-danger btn-sm" title="Remover" onClick={() => setConfirmDelete(nf)}>✕</button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -187,6 +294,22 @@ export default function EntradaPage() {
           </div>
         )}
       </div>
+
+      {/* Modal de Edição */}
+      {editando && (
+        <div className="modal-overlay" onClick={() => setEditando(null)}>
+          <div className="modal" style={{maxWidth:640}} onClick={e => e.stopPropagation()}>
+            <div className="modal-title">✏ Editar NF {editando.numero_nf}</div>
+            <NFForm
+              form={editForm} set={setEdit}
+              onSubmit={handleEditar}
+              onCancel={() => setEditando(null)}
+              loading={editLoading}
+              isEdit={true}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Modal confirma delete */}
       {confirmDelete && (
