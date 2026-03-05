@@ -13,7 +13,7 @@ import UsersPage     from './pages/UsersPage'
 import LoginPage     from './pages/LoginPage'
 import './index.css'
 
-const NAV_ITEMS = [
+const NAV_BASE = [
   { to: '/',        label: 'Dashboard',  icon: '◈', end: true },
   { to: '/entrada', label: 'NF Entrada', icon: '↓' },
   { to: '/saida',   label: 'Saída',      icon: '↑' },
@@ -21,26 +21,27 @@ const NAV_ITEMS = [
   { to: '/config',  label: 'Config',     icon: '⚙' },
 ]
 
-// ── Seletor de Unidade (header) ────────────────────────────────────────────
+// ── Seletor de Unidade no header ─────────────────────────────────
 function UnidadeSelector() {
-  const { isAdmin, unidadeAtiva, trocarUnidade, perfil } = useUser()
+  const ctx = useUser()
+  if (!ctx || !ctx.perfil) return null
+
+  const { isAdmin, unidadeAtiva, trocarUnidade, perfil } = ctx
 
   if (!isAdmin) {
-    // Analista: mostra apenas o nome da unidade vinculada (não clicável)
-    const un = UNIDADES_DEFAULT.find(u => u.id === perfil?.unidade_id)
+    const un = UNIDADES_DEFAULT.find(u => u.id === perfil.unidade_id)
     if (!un) return null
     return (
-      <div className="unidade-badge" title="Sua unidade">
-        <span className="unidade-icon">🏭</span>
+      <div className="unidade-badge" title="Sua unidade vinculada">
+        <span>🏭</span>
         <span>{un.label}</span>
       </div>
     )
   }
 
-  // Admin: dropdown para trocar a unidade ativa
   return (
-    <div className="unidade-selector-wrap" title="Selecionar unidade ativa">
-      <span className="unidade-icon">🏭</span>
+    <div className="unidade-selector-wrap" title="Unidade ativa">
+      <span>🏭</span>
       <select
         className="unidade-select"
         value={unidadeAtiva}
@@ -55,21 +56,24 @@ function UnidadeSelector() {
   )
 }
 
-// ── Layout ────────────────────────────────────────────────────────────────
+// ── Layout principal ─────────────────────────────────────────────
 function Layout({ children }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const { theme, toggle }       = useTheme()
   const { user, logout }        = useAuth()
-  const { isAdmin }             = useUser()
+  const ctx                     = useUser()
+  const isAdmin                 = ctx?.isAdmin ?? false
 
   const navItems = isAdmin
-    ? [...NAV_ITEMS, { to: '/usuarios', label: 'Usuários', icon: '👥' }]
-    : NAV_ITEMS
+    ? [...NAV_BASE, { to: '/usuarios', label: 'Usuários', icon: '👥' }]
+    : NAV_BASE
 
   return (
     <div className="app">
       <header className="header">
         <div className="header-inner">
+
+          {/* Brand */}
           <div className="header-brand">
             <span className="brand-icon">⬡</span>
             <div>
@@ -78,6 +82,7 @@ function Layout({ children }) {
             </div>
           </div>
 
+          {/* Nav desktop */}
           <nav className="nav-desktop">
             {navItems.map(n => (
               <NavLink key={n.to} to={n.to} end={!!n.end}
@@ -87,25 +92,23 @@ function Layout({ children }) {
             ))}
           </nav>
 
-          <div style={{display:'flex', alignItems:'center', gap:8}}>
-            {/* Seletor de unidade — fica ao lado do botão de tema */}
+          {/* Actions */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <UnidadeSelector />
-
             <button className="btn-theme-icon" onClick={toggle} title="Alternar tema">
               {theme === 'dark' ? '☀' : '🌙'}
             </button>
-
-            <div className="user-chip" title={user?.email}>
+            <div className="user-chip" title={`${ctx?.perfil?.role === 'admin' ? 'Admin' : 'Analista'} — ${user?.email}`}>
               {user?.photoURL
-                ? <img src={user.photoURL} alt="" style={{width:26, height:26, borderRadius:'50%'}} />
-                : <span style={{fontSize:13}}>{(user?.displayName || user?.email || '?')[0].toUpperCase()}</span>
+                ? <img src={user.photoURL} alt="" style={{ width: 26, height: 26, borderRadius: '50%' }} />
+                : <span style={{ fontSize: 13 }}>{(user?.displayName || user?.email || '?')[0].toUpperCase()}</span>
               }
             </div>
-
             <button className="hamburger" onClick={() => setMenuOpen(o => !o)}>☰</button>
           </div>
         </div>
 
+        {/* Nav mobile */}
         {menuOpen && (
           <nav className="nav-mobile">
             {navItems.map(n => (
@@ -115,10 +118,10 @@ function Layout({ children }) {
                 <span className="nav-icon">{n.icon}</span> {n.label}
               </NavLink>
             ))}
-            <div style={{margin:'8px 0', padding:'8px 0', borderTop:'1px solid var(--border)'}}>
+            <div style={{ margin: '8px 0', padding: '8px 0', borderTop: '1px solid var(--border)' }}>
               <UnidadeSelector />
             </div>
-            <button className="btn btn-danger btn-sm" style={{alignSelf:'flex-start'}} onClick={logout}>
+            <button className="btn btn-danger btn-sm" style={{ alignSelf: 'flex-start', marginTop: 4 }} onClick={logout}>
               Sair
             </button>
           </nav>
@@ -129,15 +132,17 @@ function Layout({ children }) {
   )
 }
 
-// ── App com proteção e providers ─────────────────────────────────────────
+// ── Protected routes ─────────────────────────────────────────────
 function ProtectedApp() {
-  const { user }            = useAuth()
-  const { loadingPerfil }   = useUser()
+  const { user }           = useAuth()
+  const ctx                = useUser()
+  const loadingPerfil      = ctx?.loadingPerfil ?? true
 
-  if (user === undefined || (user && loadingPerfil)) {
+  // Auth loading
+  if (user === undefined || (user !== null && loadingPerfil)) {
     return (
-      <div style={{display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh'}}>
-        <div className="loading"><div className="spinner"></div><div>Carregando...</div></div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <div className="loading"><div className="spinner" /><div>Carregando...</div></div>
       </div>
     )
   }
@@ -147,23 +152,24 @@ function ProtectedApp() {
   return (
     <Layout>
       <Routes>
-        <Route path="/"          element={<DashboardPage />} />
-        <Route path="/entrada"   element={<EntradaPage />} />
-        <Route path="/nf/:id"    element={<NFDetailPage />} />
-        <Route path="/saida"     element={<SaidaPage />} />
-        <Route path="/log"       element={<LogPage />} />
-        <Route path="/config"    element={<ConfigPage />} />
-        <Route path="/usuarios"  element={<UsersPage />} />
-        <Route path="*"          element={<Navigate to="/" replace />} />
+        <Route path="/"         element={<DashboardPage />} />
+        <Route path="/entrada"  element={<EntradaPage />} />
+        <Route path="/nf/:id"   element={<NFDetailPage />} />
+        <Route path="/saida"    element={<SaidaPage />} />
+        <Route path="/log"      element={<LogPage />} />
+        <Route path="/config"   element={<ConfigPage />} />
+        <Route path="/usuarios" element={<UsersPage />} />
+        <Route path="*"         element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
   )
 }
 
+// Wrapper que injeta o firebaseUser no UserProvider
 function AppWithUser() {
   const { user } = useAuth()
   return (
-    <UserProvider firebaseUser={user}>
+    <UserProvider firebaseUser={user ?? null}>
       <ProtectedApp />
     </UserProvider>
   )

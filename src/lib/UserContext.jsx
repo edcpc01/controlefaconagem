@@ -4,75 +4,85 @@ import {
   doc, getDoc, setDoc, getDocs, collection, updateDoc, Timestamp, onSnapshot
 } from 'firebase/firestore'
 
-const UserContext = createContext(null)
-
-// Unidades de façonagem disponíveis — admin pode adicionar mais via config
 export const UNIDADES_DEFAULT = [
   { id: 'santo_andre', label: 'Santo André (Matriz)' },
   { id: 'tiete',       label: 'Tietê (Filial)' },
 ]
 
-// Carrega ou cria o perfil do usuário no Firestore
-async function carregarOuCriarPerfil(uid, email, displayName) {
-  const ref = doc(db, 'usuarios', uid)
-  const snap = await getDoc(ref)
-  if (snap.exists()) return snap.data()
-  // Novo usuário → analista sem unidade definida
+const UserContext = createContext(null)
+
+async function criarPerfil(uid, email, displayName) {
+  const ref    = doc(db, 'usuarios', uid)
   const perfil = {
     email,
-    nome:       displayName || email,
-    role:       'analista',
+    nome:       displayName || email || uid,
+    role:       'analista',   // todo novo usuário começa como analista
     unidade_id: '',
     criado_em:  Timestamp.now(),
   }
-  await setDoc(ref, perfil)
+  await setDoc(ref, perfil, { merge: false })
   return perfil
 }
 
 export function UserProvider({ children, firebaseUser }) {
-  const [perfil, setPerfil]         = useState(null)  // { role, unidade_id, ... }
-  const [unidadeAtiva, setUnidadeAtiva] = useState(() => {
-    // Persiste a unidade escolhida na sessão
-    return sessionStorage.getItem('unidade_ativa') || ''
-  })
+  const [perfil,       setPerfil]       = useState(null)
   const [loadingPerfil, setLoadingPerfil] = useState(true)
 
+  // Unidade ativa — admin escolhe livremente, analista herda do perfil
+  const [unidadeAtiva, setUnidadeAtiva] = useState(
+    () => sessionStorage.getItem('unidade_ativa') || ''
+  )
+
   useEffect(() => {
-    if (!firebaseUser) { setPerfil(null); setLoadingPerfil(false); return }
-    const ref = doc(db, 'usuarios', firebaseUser.uid)
-    const unsub = onSnapshot(ref, async (snap) => {
+    if (!firebaseUser) {
+      setPerfil(null)
+      setLoadingPerfil(false)
+      return
+    }
+
+    const ref  = doc(db, 'usuarios', firebaseUser.uid)
+    let   init = true   // primeira snapshot
+
+    const unsub = onSnapshot(ref, async snap => {
+      let p
       if (snap.exists()) {
-        const p = snap.data()
-        setPerfil(p)
-        // Analista: usa a unidade do perfil sempre
-        if (p.role !== 'admin' && p.unidade_id) {
-          setUnidadeAtiva(p.unidade_id)
-          sessionStorage.setItem('unidade_ativa', p.unidade_id)
-        }
+        p = snap.data()
+      } else if (init) {
+        // Primeiro login — cria perfil
+        try { p = await criarPerfil(firebaseUser.uid, firebaseUser.email, firebaseUser.displayName) }
+        catch { p = { email: firebaseUser.email, nome: firebaseUser.displayName, role: 'analista', unidade_id: '' } }
       } else {
-        const p = await carregarOuCriarPerfil(firebaseUser.uid, firebaseUser.email, firebaseUser.displayName)
-        setPerfil(p)
+        return   // snapshot intermediário antes do setDoc propagar
+      }
+      init = false
+      setPerfil(p)
+
+      // Analista sempre usa a unidade do seu perfil
+      if (p.role !== 'admin' && p.unidade_id) {
+        setUnidadeAtiva(p.unidade_id)
+        sessionStorage.setItem('unidade_ativa', p.unidade_id)
       }
       setLoadingPerfil(false)
-    }, () => setLoadingPerfil(false))
+    }, () => {
+      // Erro de permissão (antes das rules do Firestore estarem configuradas)
+      setLoadingPerfil(false)
+    })
+
     return unsub
   }, [firebaseUser?.uid])
 
   const isAdmin = perfil?.role === 'admin'
 
-  // Admin troca unidade ativa livremente no header
   const trocarUnidade = (id) => {
-    if (!isAdmin) return
+    if (!isAdmin) return   // só admin pode trocar
     setUnidadeAtiva(id)
     sessionStorage.setItem('unidade_ativa', id)
   }
 
-  // Admin atualiza role/unidade de outro usuário
   const atualizarUsuario = async (uid, campos) => {
     await updateDoc(doc(db, 'usuarios', uid), campos)
   }
 
-  // Lista todos os usuários (admin only)
   const listarUsuarios = async () => {
     const snap = await getDocs(collection(db, 'usuarios'))
     return snap.docs.map(d => ({ id: d.id, ...d.data() }))
@@ -88,4 +98,6 @@ export function UserProvider({ children, firebaseUser }) {
   )
 }
 
-export function useUser() { return useContext(UserContext) }
+export function useUser() {
+  return useContext(UserContext)
+}

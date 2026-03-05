@@ -193,8 +193,8 @@ export default function DashboardPage() {
 
         {/* ── COLUNA ESQUERDA: Tabela NFs + Cards por Lote de Entrada ── */}
         <div className="dashboard-col">
-          {/* Tabela NFs Recentes */}
-          <div className="card" style={{marginBottom:16}}>
+          {/* Tabela NFs Recentes + Cards Entradas por Lote — mesmo card */}
+          <div className="card">
             <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16}}>
               <div className="card-title" style={{margin:0}}>NFs Recentes — Saldo</div>
               <button className="btn btn-ghost btn-sm" onClick={() => navigate('/entrada')}>Ver todas →</button>
@@ -221,23 +221,22 @@ export default function DashboardPage() {
                 </tbody>
               </table>
             </div>
-          </div>
 
-          {/* Cards Entradas por Lote — mesma largura da tabela acima */}
-          <div className="card-title-standalone">Entradas por Lote POY</div>
-          {lotesEntrada.length === 0 ? (
-            <div className="card"><div className="empty"><div className="empty-icon">📦</div><div className="empty-text">Nenhuma NF cadastrada</div></div></div>
-          ) : (
-            <div className="lote-col-stack">
-              {lotesEntrada.map(g => <LoteCardEntrada key={g.lote} grupo={g} navigate={navigate} />)}
-            </div>
-          )}
+            {lotesEntrada.length > 0 && (
+              <>
+                <div className="dash-section-divider">Entradas por Lote POY</div>
+                <div className="lote-col-stack">
+                  {lotesEntrada.map(g => <LoteCardEntrada key={g.lote} grupo={g} navigate={navigate} />)}
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
         {/* ── COLUNA DIREITA: Tabela Saídas + Cards por Lote de Saída ── */}
         <div className="dashboard-col">
-          {/* Tabela Últimas Saídas */}
-          <div className="card" style={{marginBottom:16}}>
+          {/* Tabela Últimas Saídas + Cards Saídas por Lote — mesmo card */}
+          <div className="card">
             <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16}}>
               <div className="card-title" style={{margin:0}}>Últimas Saídas</div>
               <button className="btn btn-ghost btn-sm" onClick={() => navigate('/saida')}>Ver todas →</button>
@@ -262,17 +261,16 @@ export default function DashboardPage() {
                 </tbody>
               </table>
             </div>
-          </div>
 
-          {/* Cards Saídas por Lote — mesma largura da tabela acima */}
-          <div className="card-title-standalone">Saídas por Lote POY</div>
-          {lotesSaida.length === 0 ? (
-            <div className="card"><div className="empty"><div className="empty-icon">📋</div><div className="empty-text">Nenhuma saída registrada</div></div></div>
-          ) : (
-            <div className="lote-col-stack">
-              {lotesSaida.map(g => <LoteCardSaida key={g.lote} grupo={g} />)}
-            </div>
-          )}
+            {lotesSaida.length > 0 && (
+              <>
+                <div className="dash-section-divider">Saídas por Lote POY</div>
+                <div className="lote-col-stack">
+                  {lotesSaida.map(g => <LoteCardSaida key={g.lote} grupo={g} />)}
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
       </div>

@@ -320,8 +320,11 @@ export default function SaidaPage() {
       <div className="card" style={{marginBottom:24}}>
         <div className="card-title">Registrar Nova Saída</div>
 
-        {/* Linha 1: Romaneio + Código + Tipo */}
-        <div className="form-grid" style={{marginBottom:12}}>
+        {/*
+          LINHA 1 — 4 obrigatórios:
+          Romaneio Microdata* | Código do Produto* | Lote POY* | Tipo de Saída*
+        */}
+        <div className="form-grid-4" style={{marginBottom:14}}>
           <div className="form-group">
             <label className="form-label">Romaneio Microdata *</label>
             <input type="text" className="form-input" placeholder="Ex: 122041"
@@ -333,6 +336,11 @@ export default function SaidaPage() {
               value={form.codigo_produto} onChange={e => set('codigo_produto', e.target.value)} />
           </div>
           <div className="form-group">
+            <label className="form-label">Lote POY *</label>
+            <input type="text" className="form-input" placeholder="Ex: 53274S"
+              value={form.lote_poy} onChange={e => set('lote_poy', e.target.value)} />
+          </div>
+          <div className="form-group">
             <label className="form-label">Tipo de Saída *</label>
             <select className="form-select" value={form.tipo_saida} onChange={e => set('tipo_saida', e.target.value)}>
               <option value="">Selecione...</option>
@@ -341,22 +349,11 @@ export default function SaidaPage() {
           </div>
         </div>
 
-        {/* Linha 2: Lote POY + Lote Acabado */}
-        <div className="form-grid" style={{marginBottom:12}}>
-          <div className="form-group">
-            <label className="form-label">Lote POY *</label>
-            <input type="text" className="form-input" placeholder="Ex: 53274S"
-              value={form.lote_poy} onChange={e => set('lote_poy', e.target.value)} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Lote Acabado</label>
-            <input type="text" className="form-input" placeholder="Opcional"
-              value={form.lote_acabado} onChange={e => set('lote_acabado', e.target.value)} />
-          </div>
-        </div>
-
-        {/* Linha 3: Vol. Líquido + Vol. Bruto + Quantidade */}
-        <div className="form-grid">
+        {/*
+          LINHA 2 — 4 opcionais:
+          Volume Líquido (kg)* | Volume Bruto (kg) | Lote Acabado | Quantidade
+        */}
+        <div className="form-grid-4">
           <div className="form-group">
             <label className="form-label">Volume Líquido (kg) *</label>
             <input type="number" step="0.001" min="0" className="form-input" placeholder="0,000"
@@ -366,6 +363,11 @@ export default function SaidaPage() {
             <label className="form-label">Volume Bruto (kg)</label>
             <input type="number" step="0.001" min="0" className="form-input" placeholder="Opcional"
               value={form.volume_bruto_kg} onChange={e => set('volume_bruto_kg', e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Lote Acabado</label>
+            <input type="text" className="form-input" placeholder="Opcional"
+              value={form.lote_acabado} onChange={e => set('lote_acabado', e.target.value)} />
           </div>
           <div className="form-group">
             <label className="form-label">Quantidade</label>
