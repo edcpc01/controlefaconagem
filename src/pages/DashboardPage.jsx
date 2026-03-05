@@ -194,7 +194,7 @@ export default function DashboardPage() {
         {/* ── COLUNA ESQUERDA: Tabela NFs + Cards por Lote de Entrada ── */}
         <div className="dashboard-col">
           {/* Tabela NFs Recentes */}
-          <div className="card" style={{marginBottom:16}}>
+          <div className="card dash-table-card">
             <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16}}>
               <div className="card-title" style={{margin:0}}>NFs Recentes — Saldo</div>
               <button className="btn btn-ghost btn-sm" onClick={() => navigate('/entrada')}>Ver todas →</button>
@@ -223,7 +223,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Cards Entradas por Lote — separados, alinhados */}
+          {/* Cards Entradas por Lote */}
           {lotesEntrada.length > 0 && (
             <div className="card" style={{padding:'14px 18px'}}>
               <div className="dash-section-divider" style={{marginTop:0}}>Entradas por Lote POY</div>
@@ -234,10 +234,10 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* ── COLUNA DIREITA: Tabela Saídas + Cards por Lote de Saída ── */}
+        {/* ── COLUNA DIREITA ── */}
         <div className="dashboard-col">
           {/* Tabela Últimas Saídas */}
-          <div className="card" style={{marginBottom:16}}>
+          <div className="card dash-table-card">
             <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16}}>
               <div className="card-title" style={{margin:0}}>Últimas Saídas</div>
               <button className="btn btn-ghost btn-sm" onClick={() => navigate('/saida')}>Ver todas →</button>
@@ -264,7 +264,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Cards Saídas por Lote — separados, alinhados */}
+          {/* Cards Saídas por Lote */}
           {lotesSaida.length > 0 && (
             <div className="card" style={{padding:'14px 18px'}}>
               <div className="dash-section-divider" style={{marginTop:0}}>Saídas por Lote POY</div>

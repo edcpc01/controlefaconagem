@@ -593,7 +593,16 @@ tr:hover td { background: rgba(34,85,184,0.08); }
 .dashboard-col {
   display: flex;
   flex-direction: column;
-  gap: 16px;   /* gap uniforme entre todos os cards da coluna */
+  gap: 16px;
+}
+/* Garante altura mínima igual nos dois cards de tabela do dashboard */
+.dash-table-card {
+  min-height: 380px;
+  display: flex;
+  flex-direction: column;
+}
+.dash-table-card .table-wrap {
+  flex: 1;
 }
 .card-title-standalone {
   font-size: 14px; font-weight: 600;
