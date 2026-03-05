@@ -174,13 +174,36 @@ export async function buscarAlocacoesPorNF(nfId) {
 // EXTRAÇÃO DE DADOS DA NF PDF (via Claude API)
 // ─────────────────────────────────────────────────────────────────
 
+// Extrai texto do PDF usando pdfjs-dist (roda no browser, sem CORS)
+async function extrairTextoPDF(base64Data) {
+  // Importação dinâmica para não aumentar o bundle inicial
+  const pdfjsLib = await import('pdfjs-dist')
+  // Worker inline via CDN — evita problema de configuração do Vite
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
+
+  const raw      = atob(base64Data)
+  const uint8    = new Uint8Array(raw.length)
+  for (let i = 0; i < raw.length; i++) uint8[i] = raw.charCodeAt(i)
+
+  const pdf   = await pdfjsLib.getDocument({ data: uint8 }).promise
+  let   texto = ''
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page    = await pdf.getPage(p)
+    const content = await page.getTextContent()
+    texto += content.items.map(i => i.str).join(' ') + '\n'
+  }
+  return texto
+}
+
+// Envia texto ao proxy Vercel → OpenRouter (arcee-ai/trinity-large-preview:free)
 export async function extrairDadosNFdoPDF(base64Data) {
-  // Chama o proxy Vercel (/api/extract-nf) em vez da API Anthropic diretamente
-  // Isso resolve o bloqueio de CORS quando chamado do browser
+  const pdfText = await extrairTextoPDF(base64Data)
+
   const response = await fetch('/api/extract-nf', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ base64Data })
+    body: JSON.stringify({ pdfText })
   })
   if (!response.ok) {
     const err = await response.json().catch(() => ({}))

@@ -1,79 +1,91 @@
-// Vercel Serverless Function — proxy para a API Anthropic
-// Resolve o bloqueio de CORS ao chamar api.anthropic.com diretamente do browser
-// Deploy: qualquer arquivo em /api/* vira uma serverless function na Vercel automaticamente
+// Vercel Serverless Function — extração de NF via OpenRouter
+// Usa pdf-parse para extrair texto do PDF, depois envia ao modelo via OpenRouter
+
+import { Buffer } from 'buffer'
 
 export default async function handler(req, res) {
-  // CORS — permite o domínio do frontend
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+  if (req.method === 'OPTIONS') return res.status(200).end()
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end()
-  }
-
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' })
-  }
-
-  const apiKey = process.env.ANTHROPIC_API_KEY
+  const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) {
-    return res.status(500).json({ 
-      error: 'ANTHROPIC_API_KEY não configurada. Acesse: Vercel Dashboard → seu projeto → Settings → Environment Variables → adicione ANTHROPIC_API_KEY com sua chave sk-ant-...' 
+    return res.status(500).json({
+      error: 'OPENROUTER_API_KEY não configurada. Acesse: Vercel Dashboard → Settings → Environment Variables'
     })
   }
 
-  try {
-    const { base64Data } = req.body
+  const { base64Data } = req.body
+  if (!base64Data) return res.status(400).json({ error: 'base64Data é obrigatório.' })
 
-    if (!base64Data) {
-      return res.status(400).json({ error: 'base64Data é obrigatório.' })
+  try {
+    // Extrai texto do PDF usando pdf-parse (roda no servidor Node.js da Vercel)
+    const pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default
+    const pdfBuffer = Buffer.from(base64Data, 'base64')
+    const pdfData   = await pdfParse(pdfBuffer)
+    const textoNF   = pdfData.text?.trim()
+
+    if (!textoNF) {
+      return res.status(422).json({ error: 'Não foi possível extrair texto do PDF.' })
     }
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    // Envia o texto ao OpenRouter
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer':  'https://controlefaconagem.vercel.app',
+        'X-Title':       'Façonagem Rhodia',
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'arcee-ai/trinity-large-preview:free',
         max_tokens: 512,
-        messages: [{
-          role: 'user',
-          content: [
-            {
-              type: 'document',
-              source: { type: 'base64', media_type: 'application/pdf', data: base64Data }
-            },
-            {
-              type: 'text',
-              text: `Extraia os dados desta Nota Fiscal e retorne APENAS um JSON válido, sem texto adicional, sem markdown, sem explicações:
+        temperature: 0,
+        messages: [
+          {
+            role: 'system',
+            content: 'Você é um extrator de dados de Notas Fiscais brasileiras. Retorne APENAS JSON válido, sem markdown, sem texto adicional.'
+          },
+          {
+            role: 'user',
+            content: `Extraia os dados desta Nota Fiscal e retorne SOMENTE um JSON no formato abaixo:
 {
-  "numero_nf": "número da NF sem zeros à esquerda desnecessários",
+  "numero_nf": "número da NF (apenas dígitos, sem zeros à esquerda, ex: 99733)",
   "data_emissao": "data no formato YYYY-MM-DD",
-  "codigo_material": "código do produto/material (campo COD)",
-  "lote": "código do lote (apenas o código, sem a quantidade, ex: 53274S)",
-  "volume_kg": número em ponto flutuante do peso líquido em kg,
-  "valor_unitario": número em ponto flutuante do valor unitário
+  "codigo_material": "código do produto/material (ex: 140911)",
+  "lote": "código do lote POY (ex: 53274S)",
+  "volume_kg": número decimal do peso líquido em kg (ex: 6234.75),
+  "valor_unitario": número decimal do valor unitário (ex: 26.1693)
 }
-Retorne SOMENTE o JSON, nada mais.`
-            }
-          ]
-        }]
+
+TEXTO DA NOTA FISCAL:
+${textoNF.slice(0, 3000)}`
+          }
+        ]
       })
     })
 
     if (!response.ok) {
       const err = await response.text()
-      return res.status(response.status).json({ error: err })
+      return res.status(response.status).json({ error: `OpenRouter error: ${err}` })
     }
 
-    const data = await response.json()
-    const text = data.content?.map(c => c.text || '').join('').trim()
-    const clean = text.replace(/```json|```/g, '').trim()
-    const parsed = JSON.parse(clean)
+    const data    = await response.json()
+    const content = data.choices?.[0]?.message?.content?.trim() || ''
+    const clean   = content.replace(/```json|```/g, '').trim()
+
+    let parsed
+    try {
+      parsed = JSON.parse(clean)
+    } catch {
+      // Tenta extrair JSON de dentro de texto
+      const match = clean.match(/\{[\s\S]*\}/)
+      if (!match) return res.status(422).json({ error: 'Modelo não retornou JSON válido.', raw: clean })
+      parsed = JSON.parse(match[0])
+    }
 
     return res.status(200).json(parsed)
   } catch (e) {
