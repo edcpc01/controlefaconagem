@@ -1,15 +1,8 @@
-// Vercel Serverless Function — extração de NF via OpenRouter
-// Estratégia: extrai texto do PDF com regex simples sobre o buffer (sem dependências)
-// Se não conseguir, tenta via pdfjs-dist como fallback
-
 export const config = { maxDuration: 30 }
 
-/** Extrai strings legíveis de um buffer PDF sem dependências externas */
 function extrairTextoPDF(buffer) {
   const str = buffer.toString('latin1')
-  // Captura streams de texto BT...ET e strings entre parênteses
   const matches = []
-  // Strings entre parênteses (formato PDF text)
   const re1 = /\(([^\)\\]{2,})\)/g
   let m
   while ((m = re1.exec(str)) !== null) {
@@ -37,40 +30,31 @@ export default async function handler(req, res) {
   let textoNF = ''
 
   try {
-    // Tenta pdfjs-dist primeiro (mais preciso)
-    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
-      .catch(() => null)
-
+    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs').catch(() => null)
     if (pdfjsLib) {
       pdfjsLib.GlobalWorkerOptions.workerSrc = ''
-      const pdfBytes  = Buffer.from(base64Data, 'base64')
-      const loadTask  = pdfjsLib.getDocument({
+      const pdfBytes = Buffer.from(base64Data, 'base64')
+      const pdf = await pdfjsLib.getDocument({
         data: new Uint8Array(pdfBytes),
-        useWorkerFetch:  false,
+        useWorkerFetch: false,
         isEvalSupported: false,
-        useSystemFonts:  true,
-      })
-      const pdf = await loadTask.promise
+        useSystemFonts: true,
+      }).promise
       for (let i = 1; i <= pdf.numPages; i++) {
-        const page    = await pdf.getPage(i)
+        const page = await pdf.getPage(i)
         const content = await page.getTextContent()
         textoNF += content.items.map(it => it.str).join(' ') + '\n'
       }
     } else {
-      // Fallback: extração simples sem dependências
-      const buf = Buffer.from(base64Data, 'base64')
-      textoNF = extrairTextoPDF(buf)
+      textoNF = extrairTextoPDF(Buffer.from(base64Data, 'base64'))
     }
-
     textoNF = textoNF.trim()
     if (!textoNF || textoNF.length < 20) {
       return res.status(422).json({ error: 'Não foi possível extrair texto do PDF.' })
     }
   } catch (e) {
-    // Fallback se pdfjs falhar
     try {
-      const buf = Buffer.from(base64Data, 'base64')
-      textoNF = extrairTextoPDF(buf).trim()
+      textoNF = extrairTextoPDF(Buffer.from(base64Data, 'base64')).trim()
     } catch {
       return res.status(500).json({ error: 'Falha ao processar PDF: ' + e.message })
     }
@@ -80,14 +64,14 @@ export default async function handler(req, res) {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Content-Type':  'application/json',
+        'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer':  'https://controlefaconagem.vercel.app',
-        'X-Title':       'Façonagem Rhodia',
+        'HTTP-Referer': 'https://controlefaconagem.vercel.app',
+        'X-Title': 'Façonagem Rhodia',
       },
       body: JSON.stringify({
-        model:       'arcee-ai/trinity-large-preview:free',
-        max_tokens:  512,
+        model: 'arcee-ai/trinity-large-preview:free',
+        max_tokens: 512,
         temperature: 0,
         messages: [
           {
@@ -96,18 +80,7 @@ export default async function handler(req, res) {
           },
           {
             role: 'user',
-            content: `Extraia os dados desta Nota Fiscal e retorne SOMENTE este JSON:
-{
-  "numero_nf": "número sem zeros à esquerda, ex: 99733",
-  "data_emissao": "formato YYYY-MM-DD",
-  "codigo_material": "código do produto, ex: 140911",
-  "lote": "lote POY, ex: 53274S",
-  "volume_kg": peso_liquido_numero,
-  "valor_unitario": valor_unitario_numero
-}
-
-NOTA FISCAL:
-${textoNF.slice(0, 4000)}`
+            content: `Extraia os dados desta Nota Fiscal e retorne SOMENTE este JSON:\n{\n  "numero_nf": "número sem zeros à esquerda, ex: 99733",\n  "data_emissao": "formato YYYY-MM-DD",\n  "codigo_material": "código do produto, ex: 140911",\n  "lote": "lote POY, ex: 53274S",\n  "volume_kg": 0,\n  "valor_unitario": 0\n}\n\nNOTA FISCAL:\n${textoNF.slice(0, 4000)}`
           }
         ]
       })
@@ -118,9 +91,9 @@ ${textoNF.slice(0, 4000)}`
       return res.status(response.status).json({ error: `OpenRouter: ${err.slice(0, 300)}` })
     }
 
-    const data    = await response.json()
+    const data = await response.json()
     const content = (data.choices?.[0]?.message?.content || '').trim()
-    const clean   = content.replace(/```json\s*/gi, '').replace(/```/g, '').trim()
+    const clean = content.replace(/```json\s*/gi, '').replace(/```/g, '').trim()
 
     let parsed
     try {
@@ -133,7 +106,6 @@ ${textoNF.slice(0, 4000)}`
 
     return res.status(200).json(parsed)
   } catch (e) {
-    console.error('OpenRouter error:', e)
     return res.status(500).json({ error: e.message })
   }
 }
