@@ -148,8 +148,9 @@ export async function deletarNFEntrada(id, numeroNF, usuario) {
 }
 
 export async function buscarAlocacoesPorNF(nfId) {
+  // Sem orderBy para evitar necessidade de índice composto no Firestore
   const alocSnap = await getDocs(
-    query(collection(db, 'alocacao_saida'), where('nf_entrada_id', '==', nfId), orderBy('criado_em', 'asc'))
+    query(collection(db, 'alocacao_saida'), where('nf_entrada_id', '==', nfId))
   )
   if (alocSnap.empty) return []
   const saidaIds = [...new Set(alocSnap.docs.map(d => d.data().saida_id))]
@@ -161,10 +162,12 @@ export async function buscarAlocacoesPorNF(nfId) {
       saidasMap[sid] = { id: sSnap.id, ...d, criado_em: tsToDateTime(d.criado_em) }
     }
   }))
-  return alocSnap.docs.map(d => {
+  // Ordenar por criado_em em memória
+  const results = alocSnap.docs.map(d => {
     const aloc = d.data()
     return { id: d.id, ...aloc, criado_em: tsToDateTime(aloc.criado_em), saida: saidasMap[aloc.saida_id] || null }
   })
+  return results.sort((a, b) => (a.criado_em || '').localeCompare(b.criado_em || ''))
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -172,40 +175,18 @@ export async function buscarAlocacoesPorNF(nfId) {
 // ─────────────────────────────────────────────────────────────────
 
 export async function extrairDadosNFdoPDF(base64Data) {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  // Chama o proxy Vercel (/api/extract-nf) em vez da API Anthropic diretamente
+  // Isso resolve o bloqueio de CORS quando chamado do browser
+  const response = await fetch('/api/extract-nf', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'document',
-            source: { type: 'base64', media_type: 'application/pdf', data: base64Data }
-          },
-          {
-            type: 'text',
-            text: `Extraia os dados desta Nota Fiscal e retorne APENAS um JSON válido, sem texto adicional, sem markdown, sem explicações:
-{
-  "numero_nf": "número da NF (apenas dígitos, sem zeros à esquerda desnecessários)",
-  "data_emissao": "data no formato YYYY-MM-DD",
-  "codigo_material": "código do produto/material (campo COD da tabela de produtos)",
-  "lote": "lote do produto (campo Lote/Qtd ou LOTE nos dados adicionais, apenas o código do lote sem a quantidade)",
-  "volume_kg": número em ponto flutuante do peso líquido em kg,
-  "valor_unitario": número em ponto flutuante do valor unitário
-}
-Retorne SOMENTE o JSON, nada mais.`
-          }
-        ]
-      }]
-    })
+    body: JSON.stringify({ base64Data })
   })
-  const data = await response.json()
-  const text = data.content?.map(c => c.text || '').join('').trim()
-  const clean = text.replace(/```json|```/g, '').trim()
-  return JSON.parse(clean)
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error(err.error || `Erro ${response.status} ao extrair NF.`)
+  }
+  return await response.json()
 }
 
 // ─────────────────────────────────────────────────────────────────
