@@ -1,125 +1,90 @@
-# Façonagem Rhodia — PWA de Controle de Entradas e Saídas
+# Façonagem Rhodia v2 — PWA
 
-Sistema PWA para controle de façonagem com lógica FIFO de alocação de NFs.
-
----
+Sistema PWA para controle de façonagem com Firebase.
 
 ## Stack
-
-- **Frontend**: React + Vite + PWA (vite-plugin-pwa)
-- **Banco de Dados**: Firebase Firestore
+- **Frontend**: React + Vite + PWA
+- **Banco**: Firebase Firestore
+- **Auth**: Firebase Authentication (Email/Senha + Google)
 - **Deploy**: Vercel
-- **Versionamento**: GitHub
 
----
+## Funcionalidades v2
 
-## Regras de Negócio
+### 🔒 Autenticação
+- Login com Google ou e-mail/senha
+- Todas as rotas protegidas — redireciona para login se não autenticado
+- Nome do usuário registrado em cada operação
 
-### Abatimento de 1,5%
-Os seguintes tipos de saída têm **abatimento de 1,5%** sobre o volume em kg:
-- Faturamento · Sucata · Estopa
+### ↓ NF de Entrada
+- Cadastro com emissão, número, código, lote, volume, valor unitário
+- Botão **🔍 Detalhe** por NF — abre tela de rastreabilidade completa
 
-**Exemplo**: Estopa 500 kg → Volume abatido = **492,5 kg**
+### ↑ Saída
+- Botão **# Auto** gera número de romaneio sequencial automático
+- Modal de **confirmação prévia** mostrando exatamente quais NFs serão debitadas e quanto
+- Filtros no histórico: por texto (romaneio/lote/código), tipo de saída, período (de/até)
+- Totalizador dos resultados filtrados
+- Botão **📊 Exportar Excel** — gera .xlsx com 3 abas: NFs, Saídas, Alocações FIFO
 
-Os tipos de **devolução** (Qualidade, Processo, Final de Campanha) **não têm abatimento**.
+### 📋 Tela de Detalhe da NF
+- Barra de progresso de consumo
+- Todos os dados da NF
+- Tabela com todas as saídas que consumiram a NF (romaneio, tipo, volume, data)
 
-### Alocação FIFO
-As saídas são alocadas nas NFs de entrada pela ordem de **data de emissão mais antiga**.
-O volume (com abatimento) é descontado sequencialmente até zerar cada NF antes de ir para a próxima.
-Toda a operação é gravada em **batch atômico** no Firestore.
+### 📄 Romaneio PDF
+- Logo da empresa no cabeçalho (configurável)
+- Numeração sequencial automática
+- Campo de assinatura para responsável e conferente
 
-### Romaneio PDF
-Após registrar uma saída, o usuário pode gerar um **Romaneio PDF** com:
-- Romaneio Microdata, Código do Produto, Lote, Tipo de saída
-- Volume bruto e volume com/sem abatimento
-- Tabela FIFO: NF de entrada, data de emissão, volume abatido por NF
+### 📋 Histórico de Ações (Log)
+- Timeline de todas as operações: NFs criadas/removidas, saídas registradas
+- Registra usuário, descrição e timestamp
+- Busca por descrição ou usuário
 
----
+### ⚙ Configurações
+- Upload de logo para o romaneio PDF (salvo no Firestore)
+- Alternância de tema escuro/claro
+- Informações da conta + botão de logout
 
-## Setup Local
+## Setup
 
-### 1. Instalar dependências
-```bash
-npm install
-```
-
-### 2. Criar projeto Firebase
-1. Acesse [console.firebase.google.com](https://console.firebase.google.com)
-2. Crie um novo projeto (pode ser no plano **Spark gratuito**)
-3. Vá em **Build → Firestore Database** e crie o banco (modo **production** ou **test**)
-4. Vá em **Configurações do projeto → Seus apps → Adicionar app Web**
-5. Copie as credenciais do SDK
-
-### 3. Regras do Firestore
-No console Firebase → **Firestore → Regras**, cole:
+### 1. Firebase Console
+1. Crie projeto em [console.firebase.google.com](https://console.firebase.google.com)
+2. **Firestore**: Criar banco → modo produção
+3. **Authentication**: Ativar provedores **E-mail/Senha** e **Google**
+4. **Regras Firestore** (para começar em desenvolvimento):
 ```
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /{document=**} {
-      allow read, write: if true;  // ajuste para autenticação em produção
+      allow read, write: if request.auth != null;
     }
   }
 }
 ```
 
-### 4. Variáveis de ambiente
+### 2. Instalar e rodar
 ```bash
+npm install
 cp .env.example .env.local
-```
-Preencha `.env.local` com as credenciais copiadas do Firebase.
-
-### 5. Rodar localmente
-```bash
+# preencher .env.local com credenciais do Firebase
 npm run dev
 ```
 
----
+### 3. Deploy Vercel
+1. Push para GitHub
+2. Importar repo na Vercel
+3. Adicionar as 6 variáveis VITE_FIREBASE_* em Environment Variables
+4. Deploy
 
-## Coleções no Firestore
+## Coleções Firestore
 
 | Coleção | Descrição |
 |---------|-----------|
-| `nf_entrada` | NFs de entrada com saldo atualizado via batch |
-| `saida` | Registros de saída com volume bruto e abatido |
-| `alocacao_saida` | Alocações FIFO entre saídas e NFs de entrada |
-
----
-
-## Deploy na Vercel
-
-### Via GitHub (recomendado)
-1. Faça push para o GitHub.
-2. No [Vercel Dashboard](https://vercel.com), importe o repositório.
-3. Em **Environment Variables**, adicione todas as variáveis `VITE_FIREBASE_*`.
-4. Clique em **Deploy**.
-
-### Via CLI
-```bash
-npm i -g vercel
-vercel login
-vercel --prod
-```
-
----
-
-## Estrutura do Projeto
-
-```
-faconagem-rhodia/
-├── src/
-│   ├── lib/
-│   │   ├── firebase.js      ← cliente Firebase (initializeApp + getFirestore)
-│   │   └── faconagem.js     ← toda a lógica: FIFO, PDF, abatimento
-│   ├── pages/
-│   │   ├── DashboardPage.jsx
-│   │   ├── EntradaPage.jsx
-│   │   └── SaidaPage.jsx
-│   ├── App.jsx
-│   ├── index.css
-│   └── main.jsx
-├── .env.example
-├── vercel.json
-├── vite.config.js
-└── package.json
-```
+| `nf_entrada` | NFs com saldo atualizado |
+| `saida` | Registros de saída |
+| `alocacao_saida` | Alocações FIFO (saída ↔ NF) |
+| `log_acoes` | Histórico de ações |
+| `counters/romaneio` | Contador sequencial de romaneios |
+| `config/app` | Configurações (logo, etc.) |

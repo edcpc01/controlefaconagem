@@ -279,3 +279,225 @@ tr:hover td { background: rgba(34,85,184,0.08); }
   .stats-grid { grid-template-columns: 1fr 1fr; }
   .modal { padding: 20px; }
 }
+
+/* ══════════════════════════════════════════════════════
+   LIGHT THEME
+══════════════════════════════════════════════════════ */
+[data-theme="light"] {
+  --blue-900: #f0f4ff;
+  --blue-800: #e0eaff;
+  --blue-700: #c8d8f8;
+  --blue-600: #a0bef0;
+  --blue-500: #2255b8;
+  --blue-400: #1a3a82;
+  --blue-300: #0f2860;
+  --blue-200: #1a3a82;
+  --blue-100: #0a1a3d;
+  --blue-50:  #050e24;
+  --accent:   #0055cc;
+  --accent-2: #007a5e;
+  --warn:     #b35c00;
+  --danger:   #cc1133;
+  --success:  #007a5e;
+  --text:     #0a1530;
+  --text-dim: #4a6080;
+  --border:   rgba(30, 80, 160, 0.18);
+  --card-bg:  rgba(255, 255, 255, 0.85);
+  --shadow:   0 4px 24px rgba(0,0,0,0.10);
+}
+
+[data-theme="light"] body {
+  background: #eef3ff;
+  background-image:
+    radial-gradient(ellipse at 20% 10%, rgba(180,210,255,0.5) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 90%, rgba(160,200,240,0.3) 0%, transparent 60%);
+}
+
+[data-theme="light"] .header {
+  background: rgba(240, 246, 255, 0.97);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+
+[data-theme="light"] .form-input,
+[data-theme="light"] .form-select {
+  background: rgba(255,255,255,0.9);
+  color: var(--text);
+}
+
+[data-theme="light"] .form-select option { background: #fff; color: #0a1530; }
+
+[data-theme="light"] .modal { background: #fff; }
+[data-theme="light"] .toast { background: #fff; color: var(--text); }
+[data-theme="light"] .toast.success { color: var(--accent-2); }
+[data-theme="light"] .toast.error   { color: var(--danger); }
+
+[data-theme="light"] thead tr { border-bottom-color: var(--border); }
+[data-theme="light"] td { color: var(--text); border-bottom-color: rgba(30,80,160,0.07); }
+[data-theme="light"] tr:hover td { background: rgba(34,85,184,0.04); }
+
+[data-theme="light"] .stat-card { background: rgba(255,255,255,0.9); }
+[data-theme="light"] .nav-link { color: var(--text-dim); }
+[data-theme="light"] .nav-link.active { background: rgba(34,85,184,0.12); color: var(--accent); }
+[data-theme="light"] .nav-link-mobile { color: var(--text-dim); }
+[data-theme="light"] .nav-link-mobile.active { background: rgba(34,85,184,0.12); color: var(--accent); }
+
+[data-theme="light"] .btn-ghost { color: var(--text-dim); border-color: var(--border); }
+[data-theme="light"] .btn-ghost:hover { background: rgba(0,0,0,0.04); color: var(--text); }
+
+[data-theme="light"] .abatimento-box { background: rgba(0,85,204,0.05); }
+
+[data-theme="light"] .log-item .log-content { background: rgba(255,255,255,0.9); }
+
+/* ── Login Page ── */
+.login-page {
+  min-height: 100vh;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px; position: relative; overflow: hidden;
+}
+.login-bg {
+  position: fixed; inset: 0; z-index: 0;
+  background: var(--blue-900);
+  background-image:
+    radial-gradient(ellipse at 15% 20%, rgba(26,80,180,0.3) 0%, transparent 55%),
+    radial-gradient(ellipse at 85% 80%, rgba(0,195,255,0.12) 0%, transparent 55%);
+}
+.login-card {
+  position: relative; z-index: 1;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 36px 32px;
+  width: 100%; max-width: 400px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+  backdrop-filter: blur(12px);
+  animation: slideUp 0.3s ease;
+}
+.login-brand { text-align: center; margin-bottom: 4px; }
+.login-brand-icon { font-size: 44px; color: var(--accent); line-height: 1; display: block; margin-bottom: 8px; }
+.login-brand-title { font-size: 22px; font-weight: 700; color: var(--text); }
+.login-brand-sub { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
+.login-divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+.login-form-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 18px; }
+
+.btn-google {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; padding: 11px; border-radius: 8px;
+  background: var(--card-bg); border: 1px solid var(--border);
+  color: var(--text); font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 14px; font-weight: 500; cursor: pointer;
+  transition: all 0.2s; margin-bottom: 16px;
+}
+.btn-google:hover { background: rgba(255,255,255,0.08); transform: translateY(-1px); }
+.btn-google:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.login-or {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 12px; color: var(--text-dim); margin-bottom: 16px;
+}
+.login-or::before, .login-or::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
+.login-error {
+  background: rgba(255,77,109,0.1); border: 1px solid rgba(255,77,109,0.3);
+  color: var(--danger); border-radius: 6px; padding: 8px 12px;
+  font-size: 13px; margin-bottom: 12px;
+}
+.login-switch {
+  text-align: center; margin-top: 16px; font-size: 13px; color: var(--text-dim);
+}
+.login-switch button {
+  background: none; border: none; color: var(--accent);
+  cursor: pointer; font-size: 13px; font-weight: 600; margin-left: 6px;
+}
+.login-switch button:hover { text-decoration: underline; }
+
+/* ── Theme toggle button ── */
+.btn-theme-icon {
+  background: rgba(255,255,255,0.08); border: 1px solid var(--border);
+  border-radius: 6px; padding: 5px 9px; cursor: pointer;
+  font-size: 15px; color: var(--text); transition: all 0.2s;
+}
+.btn-theme-icon:hover { background: rgba(255,255,255,0.14); }
+
+/* ── User chip ── */
+.user-chip {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: rgba(34,85,184,0.3); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 13px; color: var(--accent);
+  overflow: hidden;
+}
+
+/* ── Theme toggle switch ── */
+.theme-toggle {
+  display: flex; align-items: center; gap: 10px;
+  background: none; border: none; cursor: pointer; padding: 6px 0;
+}
+.theme-toggle-track {
+  width: 44px; height: 24px; border-radius: 12px;
+  background: var(--border); display: block; position: relative;
+  border: 1px solid var(--border);
+}
+.theme-toggle-thumb {
+  position: absolute; top: 3px; left: 3px;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--accent); transition: transform 0.25s ease;
+  display: block;
+}
+.theme-toggle-icon { font-size: 18px; }
+
+/* ── Progress bar ── */
+.progress-bar-bg {
+  height: 8px; border-radius: 4px;
+  background: rgba(255,255,255,0.08);
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%; border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+/* ── Log timeline ── */
+.log-timeline { display: flex; flex-direction: column; gap: 0; }
+.log-item {
+  display: flex; gap: 16px; position: relative;
+  padding-bottom: 20px;
+}
+.log-dot {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; font-weight: 700; z-index: 1;
+  background: var(--blue-700);
+}
+.log-line {
+  position: absolute; left: 15px; top: 32px;
+  width: 2px; bottom: 0;
+  background: var(--border);
+}
+.log-content {
+  flex: 1; background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 14px;
+}
+.log-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 6px; flex-wrap: wrap; gap: 6px;
+}
+.log-badge {
+  display: inline-block; padding: 2px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 600;
+}
+.log-time { font-size: 11px; color: var(--text-dim); font-family: 'IBM Plex Mono', monospace; }
+.log-desc { font-size: 13px; color: var(--text); margin-bottom: 4px; font-weight: 500; }
+.log-user { font-size: 11px; color: var(--text-dim); display: flex; align-items: center; gap: 5px; }
+.log-user-icon { font-size: 11px; }
+
+/* ── Logo upload ── */
+.logo-preview-box {
+  width: 140px; height: 80px;
+  border: 2px dashed var(--border); border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: border-color 0.2s; padding: 8px;
+  background: rgba(255,255,255,0.03);
+}
+.logo-preview-box:hover { border-color: var(--accent); }

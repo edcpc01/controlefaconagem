@@ -1,16 +1,17 @@
 import { db } from './firebase'
 import {
-  collection, doc, addDoc, getDoc, getDocs, updateDoc, deleteDoc,
-  query, where, orderBy, Timestamp, writeBatch
+  collection, doc, addDoc, getDoc, getDocs, deleteDoc,
+  query, where, orderBy, Timestamp, writeBatch, runTransaction, setDoc
 } from 'firebase/firestore'
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
+import * as XLSX from 'xlsx'
 
-// ──────────────────────────────────────────────────────────
-// CONSTANTES DE NEGÓCIO
-// ──────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────
+// CONSTANTES
+// ─────────────────────────────────────────────────────────────────
 
 export const TIPOS_COM_ABATIMENTO = ['faturamento', 'sucata', 'estopa']
 
@@ -26,41 +27,101 @@ export const TIPOS_SAIDA = [
 export const PERCENTUAL_ABATIMENTO = 0.015
 
 export function calcularVolumeAbatido(volumeBruto, tipoSaida) {
-  if (TIPOS_COM_ABATIMENTO.includes(tipoSaida)) {
-    return volumeBruto * (1 - PERCENTUAL_ABATIMENTO)
-  }
-  return volumeBruto
+  return TIPOS_COM_ABATIMENTO.includes(tipoSaida)
+    ? volumeBruto * (1 - PERCENTUAL_ABATIMENTO)
+    : volumeBruto
 }
+
+// ─────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────
 
 function tsToISO(ts) {
   if (!ts) return null
   if (ts instanceof Timestamp) return ts.toDate().toISOString().split('T')[0]
-  if (ts && ts.seconds) return new Date(ts.seconds * 1000).toISOString().split('T')[0]
+  if (ts?.seconds) return new Date(ts.seconds * 1000).toISOString().split('T')[0]
+  return ts
+}
+
+function tsToDateTime(ts) {
+  if (!ts) return null
+  if (ts?.toDate) return ts.toDate().toISOString()
   return ts
 }
 
 function docToObj(snap) {
   const d = snap.data()
   return {
-    id: snap.id,
-    ...d,
+    id: snap.id, ...d,
     data_emissao:  tsToISO(d.data_emissao),
-    criado_em:     d.criado_em ? (d.criado_em.toDate ? d.criado_em.toDate().toISOString() : d.criado_em) : null,
-    atualizado_em: d.atualizado_em ? (d.atualizado_em.toDate ? d.atualizado_em.toDate().toISOString() : d.atualizado_em) : null,
+    criado_em:     tsToDateTime(d.criado_em),
+    atualizado_em: tsToDateTime(d.atualizado_em),
   }
 }
 
-// ──────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────
+// CONTADOR SEQUENCIAL (para numeração automática de romaneio)
+// ─────────────────────────────────────────────────────────────────
+
+export async function proximoNumeroRomaneio() {
+  const counterRef = doc(db, 'counters', 'romaneio')
+  let next = 1
+  await runTransaction(db, async (tx) => {
+    const snap = await tx.get(counterRef)
+    next = snap.exists() ? (snap.data().value + 1) : 1
+    tx.set(counterRef, { value: next })
+  })
+  return String(next).padStart(6, '0')
+}
+
+// ─────────────────────────────────────────────────────────────────
+// LOG DE AÇÕES
+// ─────────────────────────────────────────────────────────────────
+
+export async function registrarLog(acao, descricao, usuario) {
+  try {
+    await addDoc(collection(db, 'log_acoes'), {
+      acao,
+      descricao,
+      usuario_email: usuario?.email || 'desconhecido',
+      usuario_nome:  usuario?.displayName || usuario?.email || 'desconhecido',
+      criado_em:     Timestamp.now(),
+    })
+  } catch (_) { /* log nunca deve quebrar a operação principal */ }
+}
+
+export async function listarLogs() {
+  const snap = await getDocs(query(collection(db, 'log_acoes'), orderBy('criado_em', 'desc')))
+  return snap.docs.map(d => ({
+    id: d.id,
+    ...d.data(),
+    criado_em: tsToDateTime(d.data().criado_em),
+  }))
+}
+
+// ─────────────────────────────────────────────────────────────────
+// CONFIGURAÇÕES (logo, preferências)
+// ─────────────────────────────────────────────────────────────────
+
+export async function salvarConfig(payload) {
+  await setDoc(doc(db, 'config', 'app'), payload, { merge: true })
+}
+
+export async function carregarConfig() {
+  const snap = await getDoc(doc(db, 'config', 'app'))
+  return snap.exists() ? snap.data() : {}
+}
+
+// ─────────────────────────────────────────────────────────────────
 // NF ENTRADA
-// ──────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────
 
 export async function listarNFsEntrada() {
-  const q = query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc'))
-  const snap = await getDocs(q)
+  const snap = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
   return snap.docs.map(docToObj)
 }
 
-export async function criarNFEntrada(payload) {
+export async function criarNFEntrada(payload, usuario) {
   const now = Timestamp.now()
   const docRef = await addDoc(collection(db, 'nf_entrada'), {
     numero_nf:       payload.numero_nf,
@@ -73,253 +134,338 @@ export async function criarNFEntrada(payload) {
     criado_em:       now,
     atualizado_em:   now,
   })
+  await registrarLog('NF_ENTRADA_CRIADA', `NF ${payload.numero_nf} — ${payload.volume_kg} kg`, usuario)
   const snap = await getDoc(docRef)
   return docToObj(snap)
 }
 
-export async function deletarNFEntrada(id) {
+export async function deletarNFEntrada(id, numeroNF, usuario) {
   await deleteDoc(doc(db, 'nf_entrada', id))
+  await registrarLog('NF_ENTRADA_REMOVIDA', `NF ${numeroNF} removida`, usuario)
 }
 
-// ──────────────────────────────────────────────────────────
-// SAÍDA COM ALOCAÇÃO FIFO
-// ──────────────────────────────────────────────────────────
+export async function buscarAlocacoesPorNF(nfId) {
+  const alocSnap = await getDocs(
+    query(collection(db, 'alocacao_saida'), where('nf_entrada_id', '==', nfId), orderBy('criado_em', 'asc'))
+  )
+  if (alocSnap.empty) return []
 
-export async function criarSaida(payload) {
-  const { romaneio_microdata, codigo_produto, lote_produto, tipo_saida, volume_bruto_kg } = payload
+  const saidaIds = [...new Set(alocSnap.docs.map(d => d.data().saida_id))]
+  const saidasMap = {}
+  await Promise.all(saidaIds.map(async (sid) => {
+    const sSnap = await getDoc(doc(db, 'saida', sid))
+    if (sSnap.exists()) {
+      const d = sSnap.data()
+      saidasMap[sid] = { id: sSnap.id, ...d, criado_em: tsToDateTime(d.criado_em) }
+    }
+  }))
 
-  const temAbatimento = TIPOS_COM_ABATIMENTO.includes(tipo_saida)
-  const volume_abatido_kg = calcularVolumeAbatido(volume_bruto_kg, tipo_saida)
-  const percentual_abatimento = temAbatimento ? PERCENTUAL_ABATIMENTO : 0
+  return alocSnap.docs.map(d => {
+    const aloc = d.data()
+    return { id: d.id, ...aloc, criado_em: tsToDateTime(aloc.criado_em), saida: saidasMap[aloc.saida_id] || null }
+  })
+}
 
-  // Buscar todas NFs ordenadas por data de emissão e filtrar com saldo em memória
+// ─────────────────────────────────────────────────────────────────
+// PREVIEW FIFO (sem gravar — usado para confirmação)
+// ─────────────────────────────────────────────────────────────────
+
+export async function previewFIFO(volumeAbatido) {
   const snap = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
   const nfsComSaldo = snap.docs.map(docToObj).filter(nf => Number(nf.volume_saldo_kg) > 0.001)
 
-  // Calcular alocações FIFO
+  let restante = volumeAbatido
+  const preview = []
+  for (const nf of nfsComSaldo) {
+    if (restante <= 0) break
+    const alocar = Math.min(Number(nf.volume_saldo_kg), restante)
+    preview.push({ numero_nf: nf.numero_nf, data_emissao: nf.data_emissao, saldo_atual: nf.volume_saldo_kg, volume_alocado_kg: alocar })
+    restante -= alocar
+  }
+  return { preview, saldoInsuficiente: restante > 0.01, faltando: restante }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// SAÍDA COM ALOCAÇÃO FIFO
+// ─────────────────────────────────────────────────────────────────
+
+export async function criarSaida(payload, usuario) {
+  const { romaneio_microdata, codigo_produto, lote_produto, tipo_saida, volume_bruto_kg } = payload
+  const temAbatimento     = TIPOS_COM_ABATIMENTO.includes(tipo_saida)
+  const volume_abatido_kg = calcularVolumeAbatido(volume_bruto_kg, tipo_saida)
+  const percentual_abatimento = temAbatimento ? PERCENTUAL_ABATIMENTO : 0
+
+  const snap = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
+  const nfsComSaldo = snap.docs.map(docToObj).filter(nf => Number(nf.volume_saldo_kg) > 0.001)
+
   let volumeRestante = volume_abatido_kg
   const alocacoes = []
-
   for (const nf of nfsComSaldo) {
     if (volumeRestante <= 0) break
     const alocar = Math.min(Number(nf.volume_saldo_kg), volumeRestante)
-    alocacoes.push({
-      nf_entrada_id:    nf.id,
-      numero_nf:        nf.numero_nf,
-      data_emissao:     nf.data_emissao,
-      volume_alocado_kg: alocar,
-    })
+    alocacoes.push({ nf_entrada_id: nf.id, numero_nf: nf.numero_nf, data_emissao: nf.data_emissao, volume_alocado_kg: alocar })
     volumeRestante -= alocar
   }
 
-  if (volumeRestante > 0.01) {
-    throw new Error(`Saldo insuficiente nas NFs de entrada. Faltam ${volumeRestante.toFixed(4)} kg.`)
-  }
+  if (volumeRestante > 0.01)
+    throw new Error(`Saldo insuficiente. Faltam ${volumeRestante.toFixed(4)} kg.`)
 
-  const now = Timestamp.now()
-  const batch = writeBatch(db)
-
-  // 1) Criar documento de saída
+  const now     = Timestamp.now()
+  const batch   = writeBatch(db)
   const saidaRef = doc(collection(db, 'saida'))
+
   batch.set(saidaRef, {
-    romaneio_microdata,
-    codigo_produto,
-    lote_produto,
-    tipo_saida,
-    volume_bruto_kg,
-    volume_abatido_kg,
-    percentual_abatimento,
+    romaneio_microdata, codigo_produto, lote_produto, tipo_saida,
+    volume_bruto_kg, volume_abatido_kg, percentual_abatimento,
+    usuario_email: usuario?.email || '',
     criado_em: now,
   })
 
-  // 2) Criar alocações
   const alocacoesRetorno = []
   for (const aloc of alocacoes) {
-    const alocRef = doc(collection(db, 'alocacao_saida'))
-    const alocData = {
-      saida_id:          saidaRef.id,
-      nf_entrada_id:     aloc.nf_entrada_id,
-      numero_nf:         aloc.numero_nf,
-      data_emissao:      aloc.data_emissao,
-      volume_alocado_kg: aloc.volume_alocado_kg,
-      criado_em:         now,
-    }
+    const alocRef  = doc(collection(db, 'alocacao_saida'))
+    const alocData = { saida_id: saidaRef.id, nf_entrada_id: aloc.nf_entrada_id, numero_nf: aloc.numero_nf, data_emissao: aloc.data_emissao, volume_alocado_kg: aloc.volume_alocado_kg, criado_em: now }
     batch.set(alocRef, alocData)
     alocacoesRetorno.push({ id: alocRef.id, ...alocData })
   }
 
-  // 3) Atualizar saldos das NFs
   for (const aloc of alocacoes) {
-    const nfOriginal = nfsComSaldo.find(n => n.id === aloc.nf_entrada_id)
-    const novoSaldo = Number(nfOriginal.volume_saldo_kg) - aloc.volume_alocado_kg
-    batch.update(doc(db, 'nf_entrada', aloc.nf_entrada_id), {
-      volume_saldo_kg: novoSaldo,
-      atualizado_em: now,
-    })
+    const nfOrig   = nfsComSaldo.find(n => n.id === aloc.nf_entrada_id)
+    const novoSaldo = Number(nfOrig.volume_saldo_kg) - aloc.volume_alocado_kg
+    batch.update(doc(db, 'nf_entrada', aloc.nf_entrada_id), { volume_saldo_kg: novoSaldo, atualizado_em: now })
   }
 
   await batch.commit()
+  await registrarLog('SAIDA_REGISTRADA', `Romaneio ${romaneio_microdata} — ${volume_abatido_kg.toFixed(4)} kg (${TIPOS_SAIDA.find(t=>t.value===tipo_saida)?.label})`, usuario)
 
   return {
-    saida: {
-      id: saidaRef.id,
-      romaneio_microdata,
-      codigo_produto,
-      lote_produto,
-      tipo_saida,
-      volume_bruto_kg,
-      volume_abatido_kg,
-      percentual_abatimento,
-      criado_em: now.toDate().toISOString(),
-    },
+    saida: { id: saidaRef.id, romaneio_microdata, codigo_produto, lote_produto, tipo_saida, volume_bruto_kg, volume_abatido_kg, percentual_abatimento, criado_em: now.toDate().toISOString() },
     alocacoes: alocacoesRetorno,
   }
 }
 
 export async function listarSaidas() {
-  const [saidasSnap, alocacoesSnap] = await Promise.all([
+  const [saidasSnap, alocSnap] = await Promise.all([
     getDocs(query(collection(db, 'saida'), orderBy('criado_em', 'desc'))),
     getDocs(collection(db, 'alocacao_saida')),
   ])
-
   const alocPorSaida = {}
-  alocacoesSnap.docs.forEach(d => {
+  alocSnap.docs.forEach(d => {
     const data = d.data()
     if (!alocPorSaida[data.saida_id]) alocPorSaida[data.saida_id] = []
     alocPorSaida[data.saida_id].push({ id: d.id, ...data })
   })
-
   return saidasSnap.docs.map(d => {
     const data = d.data()
-    return {
-      id: d.id,
-      ...data,
-      criado_em: data.criado_em?.toDate ? data.criado_em.toDate().toISOString() : data.criado_em,
-      alocacao_saida: alocPorSaida[d.id] || [],
-    }
+    return { id: d.id, ...data, criado_em: tsToDateTime(d.data().criado_em), alocacao_saida: alocPorSaida[d.id] || [] }
   })
 }
 
-// ──────────────────────────────────────────────────────────
-// GERAÇÃO DE ROMANEIO PDF
-// ──────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────
+// EXPORTAÇÃO EXCEL (.xlsx)
+// ─────────────────────────────────────────────────────────────────
 
-export function gerarRomaneioPDF(saida, alocacoes) {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-  const W = 210
-  const azulEscuro = [15, 40, 80]
-  const azulMedio  = [26, 80, 150]
-  const azulClaro  = [220, 235, 255]
-  const branco     = [255, 255, 255]
+function tipoLabel(v) { return TIPOS_SAIDA.find(t => t.value === v)?.label || v }
+function fmtNum(n) { return Number(n || 0).toFixed(4).replace('.', ',') }
+function fmtDate(d) { try { return format(new Date(d), 'dd/MM/yyyy') } catch { return '' } }
+function fmtDateTime(d) { try { return format(new Date(d), 'dd/MM/yyyy HH:mm') } catch { return '' } }
 
-  doc.setFillColor(...azulEscuro)
-  doc.rect(0, 0, W, 38, 'F')
-  doc.setTextColor(...branco)
-  doc.setFontSize(18)
-  doc.setFont('helvetica', 'bold')
-  doc.text('RHODIA SANTO ANDRÉ', W / 2, 13, { align: 'center' })
-  doc.setFontSize(11)
-  doc.setFont('helvetica', 'normal')
-  doc.text('ROMANEIO DE SAÍDA — FAÇONAGEM', W / 2, 21, { align: 'center' })
-  doc.setFontSize(9)
-  doc.text(`Emitido em: ${format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}`, W / 2, 29, { align: 'center' })
-  doc.setDrawColor(...azulMedio)
-  doc.setLineWidth(0.5)
-  doc.line(14, 40, W - 14, 40)
+export function exportarExcel(nfs, saidas) {
+  const wb = XLSX.utils.book_new()
 
-  let y = 48
-  const tipoLabel = TIPOS_SAIDA.find(t => t.value === saida.tipo_saida)?.label || saida.tipo_saida
-  const temAbatimento = TIPOS_COM_ABATIMENTO.includes(saida.tipo_saida)
+  // ── Aba 1: NFs de Entrada ──
+  const nfRows = nfs.map(nf => ({
+    'Número NF':        nf.numero_nf,
+    'Data Emissão':     fmtDate(nf.data_emissao),
+    'Cód. Material':    nf.codigo_material,
+    'Lote':             nf.lote,
+    'Volume Total (kg)': fmtNum(nf.volume_kg),
+    'Saldo (kg)':       fmtNum(nf.volume_saldo_kg),
+    'Consumido (kg)':   fmtNum(Number(nf.volume_kg) - Number(nf.volume_saldo_kg)),
+    'V. Unitário (R$)': Number(nf.valor_unitario).toFixed(6).replace('.', ','),
+    'Valor Total (R$)': (Number(nf.volume_kg) * Number(nf.valor_unitario)).toFixed(2).replace('.', ','),
+    'Status':           Number(nf.volume_saldo_kg) <= 0.01 ? 'Zerada' : 'Ativa',
+  }))
+  const wsNF = XLSX.utils.json_to_sheet(nfRows)
+  wsNF['!cols'] = [14,12,14,10,16,12,14,16,14,8].map(w => ({ wch: w }))
+  XLSX.utils.book_append_sheet(wb, wsNF, 'NFs Entrada')
 
-  doc.setFillColor(...azulClaro)
-  doc.roundedRect(14, y - 5, W - 28, 52, 3, 3, 'F')
+  // ── Aba 2: Saídas ──
+  const saidaRows = saidas.map(s => ({
+    'Romaneio Microdata': s.romaneio_microdata,
+    'Cód. Produto':       s.codigo_produto,
+    'Lote Produto':       s.lote_produto,
+    'Tipo Saída':         tipoLabel(s.tipo_saida),
+    'Volume Bruto (kg)':  fmtNum(s.volume_bruto_kg),
+    'Volume Final (kg)':  fmtNum(s.volume_abatido_kg),
+    'Abatimento':         TIPOS_COM_ABATIMENTO.includes(s.tipo_saida) ? '1,5%' : '0%',
+    'Data/Hora':          fmtDateTime(s.criado_em),
+    'Usuário':            s.usuario_email || '',
+    'NFs Abatidas':       (s.alocacao_saida || []).map(a => `NF ${a.numero_nf}: ${fmtNum(a.volume_alocado_kg)} kg`).join(' | '),
+  }))
+  const wsSaida = XLSX.utils.json_to_sheet(saidaRows)
+  wsSaida['!cols'] = [16,12,12,22,16,16,10,16,22,50].map(w => ({ wch: w }))
+  XLSX.utils.book_append_sheet(wb, wsSaida, 'Saídas')
+
+  // ── Aba 3: Alocações FIFO ──
+  const alocRows = []
+  saidas.forEach(s => {
+    (s.alocacao_saida || []).forEach(a => {
+      alocRows.push({
+        'Romaneio':          s.romaneio_microdata,
+        'Tipo Saída':        tipoLabel(s.tipo_saida),
+        'NF Entrada':        a.numero_nf,
+        'Emissão NF':        fmtDate(a.data_emissao),
+        'Volume Alocado (kg)': fmtNum(a.volume_alocado_kg),
+        'Data Saída':        fmtDateTime(s.criado_em),
+      })
+    })
+  })
+  const wsAloc = XLSX.utils.json_to_sheet(alocRows)
+  wsAloc['!cols'] = [16,22,12,12,18,16].map(w => ({ wch: w }))
+  XLSX.utils.book_append_sheet(wb, wsAloc, 'Alocações FIFO')
+
+  const ts = format(new Date(), 'yyyyMMdd_HHmm')
+  XLSX.writeFile(wb, `faconagem_rhodia_${ts}.xlsx`)
+}
+
+// ─────────────────────────────────────────────────────────────────
+// ROMANEIO PDF (com logo opcional)
+// ─────────────────────────────────────────────────────────────────
+
+export function gerarRomaneioPDF(saida, alocacoes, config = {}) {
+  const pdoc     = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const W        = 210
+  const AZ_ESC   = [15, 40, 80]
+  const AZ_MED   = [26, 80, 150]
+  const AZ_CLR   = [220, 235, 255]
+  const BRANCO   = [255, 255, 255]
+  const headerH  = config.logoBase64 ? 46 : 38
+
+  // Cabeçalho
+  pdoc.setFillColor(...AZ_ESC)
+  pdoc.rect(0, 0, W, headerH, 'F')
+
+  if (config.logoBase64) {
+    try {
+      pdoc.addImage(config.logoBase64, 'PNG', 14, 6, 32, 32)
+    } catch (_) {}
+  }
+
+  pdoc.setTextColor(...BRANCO)
+  pdoc.setFontSize(18)
+  pdoc.setFont('helvetica', 'bold')
+  pdoc.text('RHODIA SANTO ANDRÉ', W / 2, 14, { align: 'center' })
+  pdoc.setFontSize(11)
+  pdoc.setFont('helvetica', 'normal')
+  pdoc.text('ROMANEIO DE SAÍDA — FAÇONAGEM', W / 2, 22, { align: 'center' })
+
+  // Número do romaneio sequencial se disponível
+  if (saida.numero_seq) {
+    pdoc.setFontSize(9)
+    pdoc.setFont('helvetica', 'bold')
+    pdoc.text(`Nº ${saida.numero_seq}`, W - 14, 14, { align: 'right' })
+  }
+
+  pdoc.setFontSize(9)
+  pdoc.setFont('helvetica', 'normal')
+  pdoc.text(`Emitido em: ${format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}`, W / 2, 30, { align: 'center' })
+
+  pdoc.setDrawColor(...AZ_MED)
+  pdoc.setLineWidth(0.5)
+  pdoc.line(14, headerH + 2, W - 14, headerH + 2)
+
+  let y = headerH + 12
+  const tipoLbl    = TIPOS_SAIDA.find(t => t.value === saida.tipo_saida)?.label || saida.tipo_saida
+  const temAbat    = TIPOS_COM_ABATIMENTO.includes(saida.tipo_saida)
+
+  // Box de dados
+  pdoc.setFillColor(...AZ_CLR)
+  pdoc.roundedRect(14, y - 5, W - 28, 52, 3, 3, 'F')
 
   const campos = [
     ['Romaneio Microdata', saida.romaneio_microdata],
     ['Código do Produto',  saida.codigo_produto],
     ['Lote do Produto',    saida.lote_produto],
-    ['Tipo de Saída',      tipoLabel],
+    ['Tipo de Saída',      tipoLbl],
   ]
-
-  campos.forEach(([label, value], i) => {
+  campos.forEach(([lbl, val], i) => {
     const col = i % 2 === 0 ? 20 : W / 2 + 6
     const row = y + Math.floor(i / 2) * 10
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(80, 80, 80)
-    doc.text(label + ':', col, row)
-    doc.setFont('helvetica', 'normal')
-    doc.setTextColor(...azulEscuro)
-    doc.text(String(value), col + 44, row)
+    pdoc.setFont('helvetica', 'bold')
+    pdoc.setTextColor(80, 80, 80)
+    pdoc.text(lbl + ':', col, row)
+    pdoc.setFont('helvetica', 'normal')
+    pdoc.setTextColor(...AZ_ESC)
+    pdoc.text(String(val), col + 44, row)
   })
 
   y += 22
 
-  doc.setFont('helvetica', 'bold')
-  doc.setTextColor(80, 80, 80)
-  doc.text('Volume Bruto:', 20, y)
-  doc.setFont('helvetica', 'normal')
-  doc.setTextColor(...azulEscuro)
-  doc.text(`${Number(saida.volume_bruto_kg).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })} kg`, 64, y)
+  const fmtKg = n => Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
 
-  if (temAbatimento) {
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(80, 80, 80)
-    doc.text('Volume c/ Abatimento (1,5%):', W / 2 + 6, y)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(...azulMedio)
-    doc.text(`${Number(saida.volume_abatido_kg).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })} kg`, W / 2 + 62, y)
+  pdoc.setFont('helvetica', 'bold'); pdoc.setTextColor(80, 80, 80)
+  pdoc.text('Volume Bruto:', 20, y)
+  pdoc.setFont('helvetica', 'normal'); pdoc.setTextColor(...AZ_ESC)
+  pdoc.text(`${fmtKg(saida.volume_bruto_kg)} kg`, 64, y)
+
+  if (temAbat) {
+    pdoc.setFont('helvetica', 'bold'); pdoc.setTextColor(80, 80, 80)
+    pdoc.text('Com Abatimento (1,5%):', W / 2 + 6, y)
+    pdoc.setFont('helvetica', 'bold'); pdoc.setTextColor(...AZ_MED)
+    pdoc.text(`${fmtKg(saida.volume_abatido_kg)} kg`, W / 2 + 58, y)
   } else {
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(80, 80, 80)
-    doc.text('Volume Final:', W / 2 + 6, y)
-    doc.setFont('helvetica', 'bold')
-    doc.setTextColor(...azulMedio)
-    doc.text(`${Number(saida.volume_abatido_kg).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })} kg`, W / 2 + 36, y)
+    pdoc.setFont('helvetica', 'bold'); pdoc.setTextColor(80, 80, 80)
+    pdoc.text('Volume Final:', W / 2 + 6, y)
+    pdoc.setFont('helvetica', 'bold'); pdoc.setTextColor(...AZ_MED)
+    pdoc.text(`${fmtKg(saida.volume_abatido_kg)} kg`, W / 2 + 36, y)
   }
 
   y += 18
 
-  doc.setFillColor(...azulEscuro)
-  doc.setTextColor(...branco)
-  doc.setFontSize(11)
-  doc.setFont('helvetica', 'bold')
-  doc.roundedRect(14, y - 6, W - 28, 10, 2, 2, 'F')
-  doc.text('ALOCAÇÃO NAS NFs DE ENTRADA (FIFO)', W / 2, y, { align: 'center' })
+  // Tabela FIFO
+  pdoc.setFillColor(...AZ_ESC); pdoc.setTextColor(...BRANCO)
+  pdoc.setFontSize(11); pdoc.setFont('helvetica', 'bold')
+  pdoc.roundedRect(14, y - 6, W - 28, 10, 2, 2, 'F')
+  pdoc.text('ALOCAÇÃO NAS NFs DE ENTRADA (FIFO)', W / 2, y, { align: 'center' })
   y += 8
 
-  autoTable(doc, {
-    startY: y,
-    margin: { left: 14, right: 14 },
+  autoTable(pdoc, {
+    startY: y, margin: { left: 14, right: 14 },
     head: [['NF de Entrada', 'Data de Emissão', 'Volume Abatido (kg)']],
     body: alocacoes.map(a => [
       a.numero_nf,
       a.data_emissao ? format(new Date(a.data_emissao), 'dd/MM/yyyy') : '—',
-      Number(a.volume_alocado_kg).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 }),
+      fmtKg(a.volume_alocado_kg),
     ]),
     foot: [[
-      { content: 'TOTAL', styles: { fontStyle: 'bold' } },
-      '',
-      {
-        content: alocacoes.reduce((acc, a) => acc + Number(a.volume_alocado_kg), 0)
-          .toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 }) + ' kg',
-        styles: { fontStyle: 'bold' },
-      },
+      { content: 'TOTAL', styles: { fontStyle: 'bold' } }, '',
+      { content: fmtKg(alocacoes.reduce((s, a) => s + Number(a.volume_alocado_kg), 0)) + ' kg', styles: { fontStyle: 'bold' } },
     ]],
-    headStyles:         { fillColor: azulMedio, textColor: branco, fontStyle: 'bold', fontSize: 10 },
+    headStyles:         { fillColor: AZ_MED, textColor: BRANCO, fontStyle: 'bold', fontSize: 10 },
     bodyStyles:         { textColor: [30, 30, 60], fontSize: 9 },
-    footStyles:         { fillColor: azulClaro, textColor: azulEscuro, fontStyle: 'bold' },
+    footStyles:         { fillColor: AZ_CLR, textColor: AZ_ESC, fontStyle: 'bold' },
     alternateRowStyles: { fillColor: [240, 246, 255] },
     columnStyles:       { 2: { halign: 'right' } },
   })
 
-  const pageH = doc.internal.pageSize.height
-  doc.setFillColor(...azulEscuro)
-  doc.rect(0, pageH - 14, W, 14, 'F')
-  doc.setTextColor(...branco)
-  doc.setFontSize(8)
-  doc.setFont('helvetica', 'normal')
-  doc.text('Rhodia Santo André — Sistema de Controle de Façonagem', W / 2, pageH - 5, { align: 'center' })
+  // Campo de assinatura
+  const finalY = pdoc.lastAutoTable.finalY + 16
+  pdoc.setDrawColor(...AZ_MED)
+  pdoc.setLineWidth(0.3)
+  pdoc.line(14, finalY + 10, 90, finalY + 10)
+  pdoc.line(120, finalY + 10, W - 14, finalY + 10)
+  pdoc.setFontSize(8); pdoc.setTextColor(100, 100, 100); pdoc.setFont('helvetica', 'normal')
+  pdoc.text('Responsável pela Saída', 52, finalY + 15, { align: 'center' })
+  pdoc.text('Conferente / Aprovação', W - 14 - 31, finalY + 15, { align: 'center' })
+
+  // Rodapé
+  const pH = pdoc.internal.pageSize.height
+  pdoc.setFillColor(...AZ_ESC)
+  pdoc.rect(0, pH - 14, W, 14, 'F')
+  pdoc.setTextColor(...BRANCO); pdoc.setFontSize(8); pdoc.setFont('helvetica', 'normal')
+  pdoc.text('Rhodia Santo André — Sistema de Controle de Façonagem', W / 2, pH - 5, { align: 'center' })
 
   const filename = `romaneio_${saida.romaneio_microdata}_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`
-  doc.save(filename)
+  pdoc.save(filename)
 }

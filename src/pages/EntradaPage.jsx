@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { listarNFsEntrada, criarNFEntrada, deletarNFEntrada } from '../lib/faconagem'
+import { useAuth } from '../lib/AuthContext'
 import { format } from 'date-fns'
 
 function Toast({ toasts }) {
@@ -22,6 +24,8 @@ const EMPTY_FORM = {
 }
 
 export default function EntradaPage() {
+  const { user } = useAuth()
+  const navigate = useNavigate()
   const [nfs, setNfs] = useState([])
   const [form, setForm] = useState(EMPTY_FORM)
   const [loading, setLoading] = useState(false)
@@ -57,7 +61,7 @@ export default function EntradaPage() {
         lote: form.lote.trim(),
         volume_kg: parseFloat(form.volume_kg),
         valor_unitario: parseFloat(form.valor_unitario),
-      })
+      }, user)
       toast('NF cadastrada com sucesso!')
       setForm(EMPTY_FORM)
       load()
@@ -70,7 +74,7 @@ export default function EntradaPage() {
 
   const handleDelete = async (id) => {
     try {
-      await deletarNFEntrada(id)
+      await deletarNFEntrada(id, confirmDelete.numero_nf, user)
       toast('NF removida.')
       load()
     } catch (e) {
@@ -172,7 +176,8 @@ export default function EntradaPage() {
                       {fmt(nf.volume_saldo_kg)}
                     </td>
                     <td className="td-right td-mono">{fmtCurrency(nf.valor_unitario)}</td>
-                    <td>
+                    <td style={{display:'flex', gap:6}}>
+                      <button className="btn btn-ghost btn-sm" title="Ver detalhes" onClick={() => navigate(`/nf/${nf.id}`)}>🔍</button>
                       <button className="btn btn-danger btn-sm" onClick={() => setConfirmDelete(nf)}>✕</button>
                     </td>
                   </tr>
