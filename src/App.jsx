@@ -1,3 +1,4 @@
+// Firebase é inicializado via src/lib/firebase.js importado em faconagem.js
 import { useState } from 'react'
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import EntradaPage from './pages/EntradaPage'
