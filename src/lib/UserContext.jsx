@@ -5,8 +5,8 @@ import {
 } from 'firebase/firestore'
 
 export const UNIDADES_DEFAULT = [
-  { id: 'santo_andre', label: 'Santo André (Matriz)' },
-  { id: 'tiete',       label: 'Tietê (Filial)' },
+  { id: 'corradi_matriz', label: 'Corradi Matriz' },
+  { id: 'corradi_filial', label: 'Corradi Filial' },
 ]
 
 const UserContext = createContext(null)

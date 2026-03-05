@@ -193,8 +193,8 @@ export default function DashboardPage() {
 
         {/* ── COLUNA ESQUERDA: Tabela NFs + Cards por Lote de Entrada ── */}
         <div className="dashboard-col">
-          {/* Tabela NFs Recentes + Cards Entradas por Lote — mesmo card */}
-          <div className="card">
+          {/* Tabela NFs Recentes */}
+          <div className="card" style={{marginBottom:16}}>
             <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16}}>
               <div className="card-title" style={{margin:0}}>NFs Recentes — Saldo</div>
               <button className="btn btn-ghost btn-sm" onClick={() => navigate('/entrada')}>Ver todas →</button>
@@ -221,22 +221,23 @@ export default function DashboardPage() {
                 </tbody>
               </table>
             </div>
-
-            {lotesEntrada.length > 0 && (
-              <>
-                <div className="dash-section-divider">Entradas por Lote POY</div>
-                <div className="lote-col-stack">
-                  {lotesEntrada.map(g => <LoteCardEntrada key={g.lote} grupo={g} navigate={navigate} />)}
-                </div>
-              </>
-            )}
           </div>
+
+          {/* Cards Entradas por Lote — separados, alinhados */}
+          {lotesEntrada.length > 0 && (
+            <div className="card" style={{padding:'14px 18px'}}>
+              <div className="dash-section-divider" style={{marginTop:0}}>Entradas por Lote POY</div>
+              <div className="lote-col-stack">
+                {lotesEntrada.map(g => <LoteCardEntrada key={g.lote} grupo={g} navigate={navigate} />)}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── COLUNA DIREITA: Tabela Saídas + Cards por Lote de Saída ── */}
         <div className="dashboard-col">
-          {/* Tabela Últimas Saídas + Cards Saídas por Lote — mesmo card */}
-          <div className="card">
+          {/* Tabela Últimas Saídas */}
+          <div className="card" style={{marginBottom:16}}>
             <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16}}>
               <div className="card-title" style={{margin:0}}>Últimas Saídas</div>
               <button className="btn btn-ghost btn-sm" onClick={() => navigate('/saida')}>Ver todas →</button>
@@ -261,16 +262,17 @@ export default function DashboardPage() {
                 </tbody>
               </table>
             </div>
-
-            {lotesSaida.length > 0 && (
-              <>
-                <div className="dash-section-divider">Saídas por Lote POY</div>
-                <div className="lote-col-stack">
-                  {lotesSaida.map(g => <LoteCardSaida key={g.lote} grupo={g} />)}
-                </div>
-              </>
-            )}
           </div>
+
+          {/* Cards Saídas por Lote — separados, alinhados */}
+          {lotesSaida.length > 0 && (
+            <div className="card" style={{padding:'14px 18px'}}>
+              <div className="dash-section-divider" style={{marginTop:0}}>Saídas por Lote POY</div>
+              <div className="lote-col-stack">
+                {lotesSaida.map(g => <LoteCardSaida key={g.lote} grupo={g} />)}
+              </div>
+            </div>
+          )}
         </div>
 
       </div>
