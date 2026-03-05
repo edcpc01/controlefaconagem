@@ -1,7 +1,7 @@
 // Vercel Serverless Function — extração de NF via OpenRouter
-// Usa pdf-parse para extrair texto do PDF, depois envia ao modelo via OpenRouter
+// Usa pdfjs-dist (já dependência do projeto) para extrair texto do PDF
 
-import { Buffer } from 'buffer'
+export const config = { maxDuration: 30 }
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -12,26 +12,35 @@ export default async function handler(req, res) {
 
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) {
-    return res.status(500).json({
-      error: 'OPENROUTER_API_KEY não configurada. Acesse: Vercel Dashboard → Settings → Environment Variables'
-    })
+    return res.status(500).json({ error: 'OPENROUTER_API_KEY não configurada na Vercel.' })
   }
 
   const { base64Data } = req.body
   if (!base64Data) return res.status(400).json({ error: 'base64Data é obrigatório.' })
 
   try {
-    // Extrai texto do PDF usando pdf-parse (roda no servidor Node.js da Vercel)
-    const pdfParse = (await import('pdf-parse/lib/pdf-parse.js')).default
-    const pdfBuffer = Buffer.from(base64Data, 'base64')
-    const pdfData   = await pdfParse(pdfBuffer)
-    const textoNF   = pdfData.text?.trim()
+    // ── Extração de texto via pdfjs-dist (compatível com Node.js serverless) ──
+    const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
+    pdfjsLib.GlobalWorkerOptions.workerSrc = ''  // sem worker no servidor
 
-    if (!textoNF) {
-      return res.status(422).json({ error: 'Não foi possível extrair texto do PDF.' })
+    const pdfBytes  = Buffer.from(base64Data, 'base64')
+    const loadTask  = pdfjsLib.getDocument({ data: new Uint8Array(pdfBytes), useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true })
+    const pdf       = await loadTask.promise
+
+    let textoNF = ''
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page    = await pdf.getPage(i)
+      const content = await page.getTextContent()
+      const linhas  = content.items.map(item => item.str).join(' ')
+      textoNF += linhas + '\n'
     }
 
-    // Envia o texto ao OpenRouter
+    textoNF = textoNF.trim()
+    if (!textoNF) {
+      return res.status(422).json({ error: 'Não foi possível extrair texto do PDF. Verifique se o PDF não é escaneado.' })
+    }
+
+    // ── Chamada ao OpenRouter ──
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -41,55 +50,60 @@ export default async function handler(req, res) {
         'X-Title':       'Façonagem Rhodia',
       },
       body: JSON.stringify({
-        model: 'arcee-ai/trinity-large-preview:free',
-        max_tokens: 512,
+        model:       'arcee-ai/trinity-large-preview:free',
+        max_tokens:  512,
         temperature: 0,
         messages: [
           {
             role: 'system',
-            content: 'Você é um extrator de dados de Notas Fiscais brasileiras. Retorne APENAS JSON válido, sem markdown, sem texto adicional.'
+            content: 'Você é um extrator de dados de Notas Fiscais brasileiras. Retorne APENAS JSON válido, sem markdown, sem texto adicional, sem explicações.'
           },
           {
             role: 'user',
-            content: `Extraia os dados desta Nota Fiscal e retorne SOMENTE um JSON no formato abaixo:
+            content: `Extraia os dados desta Nota Fiscal e retorne SOMENTE este JSON preenchido:
 {
-  "numero_nf": "número da NF (apenas dígitos, sem zeros à esquerda, ex: 99733)",
+  "numero_nf": "número da NF sem zeros à esquerda, ex: 99733",
   "data_emissao": "data no formato YYYY-MM-DD",
-  "codigo_material": "código do produto/material (ex: 140911)",
-  "lote": "código do lote POY (ex: 53274S)",
-  "volume_kg": número decimal do peso líquido em kg (ex: 6234.75),
-  "valor_unitario": número decimal do valor unitário (ex: 26.1693)
+  "codigo_material": "código do produto/material (campo COD ou similar), ex: 140911",
+  "lote": "código do lote POY (campo Lote), ex: 53274S",
+  "volume_kg": numero_decimal_do_peso_liquido_em_kg,
+  "valor_unitario": numero_decimal_do_valor_unitario
 }
 
 TEXTO DA NOTA FISCAL:
-${textoNF.slice(0, 3000)}`
+${textoNF.slice(0, 4000)}`
           }
         ]
       })
     })
 
     if (!response.ok) {
-      const err = await response.text()
-      return res.status(response.status).json({ error: `OpenRouter error: ${err}` })
+      const errText = await response.text()
+      console.error('OpenRouter error:', errText)
+      return res.status(response.status).json({ error: `OpenRouter: ${errText.slice(0, 200)}` })
     }
 
     const data    = await response.json()
     const content = data.choices?.[0]?.message?.content?.trim() || ''
-    const clean   = content.replace(/```json|```/g, '').trim()
 
+    // Limpa possível markdown e extrai JSON
+    const clean = content.replace(/```json\s*/gi, '').replace(/```/g, '').trim()
     let parsed
     try {
       parsed = JSON.parse(clean)
     } catch {
-      // Tenta extrair JSON de dentro de texto
       const match = clean.match(/\{[\s\S]*\}/)
-      if (!match) return res.status(422).json({ error: 'Modelo não retornou JSON válido.', raw: clean })
+      if (!match) {
+        console.error('Resposta não-JSON do modelo:', clean)
+        return res.status(422).json({ error: 'Modelo não retornou JSON válido.', raw: clean.slice(0, 300) })
+      }
       parsed = JSON.parse(match[0])
     }
 
     return res.status(200).json(parsed)
+
   } catch (e) {
-    console.error('extract-nf error:', e)
-    return res.status(500).json({ error: e.message || 'Erro interno.' })
+    console.error('extract-nf error:', e.message, e.stack)
+    return res.status(500).json({ error: e.message || 'Erro interno no servidor.' })
   }
 }
