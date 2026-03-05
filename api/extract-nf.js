@@ -1,7 +1,23 @@
 // Vercel Serverless Function — extração de NF via OpenRouter
-// Usa pdfjs-dist (já dependência do projeto) para extrair texto do PDF
+// Estratégia: extrai texto do PDF com regex simples sobre o buffer (sem dependências)
+// Se não conseguir, tenta via pdfjs-dist como fallback
 
 export const config = { maxDuration: 30 }
+
+/** Extrai strings legíveis de um buffer PDF sem dependências externas */
+function extrairTextoPDF(buffer) {
+  const str = buffer.toString('latin1')
+  // Captura streams de texto BT...ET e strings entre parênteses
+  const matches = []
+  // Strings entre parênteses (formato PDF text)
+  const re1 = /\(([^\)\\]{2,})\)/g
+  let m
+  while ((m = re1.exec(str)) !== null) {
+    const s = m[1].replace(/\\n/g, ' ').replace(/\\/g, '').trim()
+    if (s.length > 1) matches.push(s)
+  }
+  return matches.join(' ')
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
@@ -18,29 +34,49 @@ export default async function handler(req, res) {
   const { base64Data } = req.body
   if (!base64Data) return res.status(400).json({ error: 'base64Data é obrigatório.' })
 
+  let textoNF = ''
+
   try {
-    // ── Extração de texto via pdfjs-dist (compatível com Node.js serverless) ──
+    // Tenta pdfjs-dist primeiro (mais preciso)
     const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
-    pdfjsLib.GlobalWorkerOptions.workerSrc = ''  // sem worker no servidor
+      .catch(() => null)
 
-    const pdfBytes  = Buffer.from(base64Data, 'base64')
-    const loadTask  = pdfjsLib.getDocument({ data: new Uint8Array(pdfBytes), useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true })
-    const pdf       = await loadTask.promise
-
-    let textoNF = ''
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page    = await pdf.getPage(i)
-      const content = await page.getTextContent()
-      const linhas  = content.items.map(item => item.str).join(' ')
-      textoNF += linhas + '\n'
+    if (pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = ''
+      const pdfBytes  = Buffer.from(base64Data, 'base64')
+      const loadTask  = pdfjsLib.getDocument({
+        data: new Uint8Array(pdfBytes),
+        useWorkerFetch:  false,
+        isEvalSupported: false,
+        useSystemFonts:  true,
+      })
+      const pdf = await loadTask.promise
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page    = await pdf.getPage(i)
+        const content = await page.getTextContent()
+        textoNF += content.items.map(it => it.str).join(' ') + '\n'
+      }
+    } else {
+      // Fallback: extração simples sem dependências
+      const buf = Buffer.from(base64Data, 'base64')
+      textoNF = extrairTextoPDF(buf)
     }
 
     textoNF = textoNF.trim()
-    if (!textoNF) {
-      return res.status(422).json({ error: 'Não foi possível extrair texto do PDF. Verifique se o PDF não é escaneado.' })
+    if (!textoNF || textoNF.length < 20) {
+      return res.status(422).json({ error: 'Não foi possível extrair texto do PDF.' })
     }
+  } catch (e) {
+    // Fallback se pdfjs falhar
+    try {
+      const buf = Buffer.from(base64Data, 'base64')
+      textoNF = extrairTextoPDF(buf).trim()
+    } catch {
+      return res.status(500).json({ error: 'Falha ao processar PDF: ' + e.message })
+    }
+  }
 
-    // ── Chamada ao OpenRouter ──
+  try {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -56,21 +92,21 @@ export default async function handler(req, res) {
         messages: [
           {
             role: 'system',
-            content: 'Você é um extrator de dados de Notas Fiscais brasileiras. Retorne APENAS JSON válido, sem markdown, sem texto adicional, sem explicações.'
+            content: 'Você é um extrator de dados de Notas Fiscais brasileiras. Retorne APENAS JSON válido, sem markdown, sem texto adicional.'
           },
           {
             role: 'user',
-            content: `Extraia os dados desta Nota Fiscal e retorne SOMENTE este JSON preenchido:
+            content: `Extraia os dados desta Nota Fiscal e retorne SOMENTE este JSON:
 {
-  "numero_nf": "número da NF sem zeros à esquerda, ex: 99733",
-  "data_emissao": "data no formato YYYY-MM-DD",
-  "codigo_material": "código do produto/material (campo COD ou similar), ex: 140911",
-  "lote": "código do lote POY (campo Lote), ex: 53274S",
-  "volume_kg": numero_decimal_do_peso_liquido_em_kg,
-  "valor_unitario": numero_decimal_do_valor_unitario
+  "numero_nf": "número sem zeros à esquerda, ex: 99733",
+  "data_emissao": "formato YYYY-MM-DD",
+  "codigo_material": "código do produto, ex: 140911",
+  "lote": "lote POY, ex: 53274S",
+  "volume_kg": peso_liquido_numero,
+  "valor_unitario": valor_unitario_numero
 }
 
-TEXTO DA NOTA FISCAL:
+NOTA FISCAL:
 ${textoNF.slice(0, 4000)}`
           }
         ]
@@ -78,32 +114,26 @@ ${textoNF.slice(0, 4000)}`
     })
 
     if (!response.ok) {
-      const errText = await response.text()
-      console.error('OpenRouter error:', errText)
-      return res.status(response.status).json({ error: `OpenRouter: ${errText.slice(0, 200)}` })
+      const err = await response.text()
+      return res.status(response.status).json({ error: `OpenRouter: ${err.slice(0, 300)}` })
     }
 
     const data    = await response.json()
-    const content = data.choices?.[0]?.message?.content?.trim() || ''
+    const content = (data.choices?.[0]?.message?.content || '').trim()
+    const clean   = content.replace(/```json\s*/gi, '').replace(/```/g, '').trim()
 
-    // Limpa possível markdown e extrai JSON
-    const clean = content.replace(/```json\s*/gi, '').replace(/```/g, '').trim()
     let parsed
     try {
       parsed = JSON.parse(clean)
     } catch {
       const match = clean.match(/\{[\s\S]*\}/)
-      if (!match) {
-        console.error('Resposta não-JSON do modelo:', clean)
-        return res.status(422).json({ error: 'Modelo não retornou JSON válido.', raw: clean.slice(0, 300) })
-      }
+      if (!match) return res.status(422).json({ error: 'JSON inválido do modelo.', raw: clean.slice(0, 200) })
       parsed = JSON.parse(match[0])
     }
 
     return res.status(200).json(parsed)
-
   } catch (e) {
-    console.error('extract-nf error:', e.message, e.stack)
-    return res.status(500).json({ error: e.message || 'Erro interno no servidor.' })
+    console.error('OpenRouter error:', e)
+    return res.status(500).json({ error: e.message })
   }
 }
