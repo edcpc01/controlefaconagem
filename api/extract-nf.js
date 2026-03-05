@@ -18,7 +18,9 @@ export default async function handler(req, res) {
 
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) {
-    return res.status(500).json({ error: 'ANTHROPIC_API_KEY não configurada no ambiente Vercel.' })
+    return res.status(500).json({ 
+      error: 'ANTHROPIC_API_KEY não configurada. Acesse: Vercel Dashboard → seu projeto → Settings → Environment Variables → adicione ANTHROPIC_API_KEY com sua chave sk-ant-...' 
+    })
   }
 
   try {

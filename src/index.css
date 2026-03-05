@@ -583,26 +583,39 @@ tr:hover td { background: rgba(34,85,184,0.08); }
   .lote-grid { grid-template-columns: 1fr; }
 }
 
-/* ── Dashboard 2-column layout ── */
-.dashboard-cols {
+/* ── Dashboard 4-area named grid ── */
+/*
+  Layout:
+  [ A: NFs Recentes     ] [ B: Últimas Saídas  ]
+  [ C: Entradas p/ Lote ] [ D: Saídas p/ Lote  ]
+
+  Linha 1: ambas as células têm a mesma altura (auto = cresce com o maior)
+  Linha 2: idem
+*/
+.dash-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  grid-template-rows: auto auto;
   gap: 20px;
-  align-items: start;
+  align-items: stretch;   /* força ambas as células de cada linha à mesma altura */
 }
-.dashboard-col {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-/* Garante altura mínima igual nos dois cards de tabela do dashboard */
-.dash-table-card {
-  min-height: 380px;
-  display: flex;
-  flex-direction: column;
-}
-.dash-table-card .table-wrap {
-  flex: 1;
+.dash-grid-a { grid-area: 1 / 1; display: flex; flex-direction: column; }
+.dash-grid-b { grid-area: 1 / 2; display: flex; flex-direction: column; }
+.dash-grid-c { grid-area: 2 / 1; }
+.dash-grid-d { grid-area: 2 / 2; }
+
+/* fallback: remove as antigas classes */
+.dashboard-cols { display: none; }
+.dashboard-col  { display: contents; }
+.dash-table-card { /* não usada mais */ }
+
+@media (max-width: 860px) {
+  .dash-grid {
+    grid-template-columns: 1fr;
+  }
+  .dash-grid-a, .dash-grid-b, .dash-grid-c, .dash-grid-d {
+    grid-column: 1; grid-row: auto;
+  }
 }
 .card-title-standalone {
   font-size: 14px; font-weight: 600;

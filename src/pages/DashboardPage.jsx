@@ -36,7 +36,6 @@ function agruparSaidasPorLote(saidas) {
   return Object.values(mapa).sort((a, b) => b.totalFinal - a.totalFinal)
 }
 
-// ── Card expansível por lote ──
 function LoteCardEntrada({ grupo, navigate }) {
   const [open, setOpen] = useState(false)
   const pct = grupo.totalKg > 0 ? (grupo.saldoKg / grupo.totalKg) * 100 : 0
@@ -56,12 +55,12 @@ function LoteCardEntrada({ grupo, navigate }) {
       </div>
       <div className="progress-bar-bg" style={{margin:'10px 0 4px'}}>
         <div className="progress-bar-fill" style={{
-          width: `${Math.min(100 - pct, 100)}%`,
-          background: pct < 10 ? 'var(--danger)' : pct < 30 ? 'var(--warn)' : 'linear-gradient(90deg, var(--accent), var(--accent-2))'
-        }} />
+          width:`${Math.min(100-pct,100)}%`,
+          background: pct < 10 ? 'var(--danger)' : pct < 30 ? 'var(--warn)' : 'linear-gradient(90deg,var(--accent),var(--accent-2))'
+        }}/>
       </div>
-      <div style={{display:'flex', justifyContent:'space-between', fontSize:11, color:'var(--text-dim)', marginBottom: open ? 10 : 0}}>
-        <span>{(100 - pct).toFixed(1)}% consumido</span>
+      <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--text-dim)',marginBottom: open ? 10 : 0}}>
+        <span>{(100-pct).toFixed(1)}% consumido</span>
         <span>{pct.toFixed(1)}% disponível</span>
       </div>
       {open && (
@@ -69,25 +68,23 @@ function LoteCardEntrada({ grupo, navigate }) {
           {grupo.nfs.map(nf => (
             <div key={nf.id} className="lote-nf-row">
               <div>
-                <span className="td-mono" style={{fontWeight:600, fontSize:13}}>NF {nf.numero_nf}</span>
-                <span style={{fontSize:11, color:'var(--text-dim)', marginLeft:8}}>
-                  {nf.data_emissao ? format(new Date(nf.data_emissao), 'dd/MM/yyyy') : ''}
+                <span className="td-mono" style={{fontWeight:600,fontSize:13}}>NF {nf.numero_nf}</span>
+                <span style={{fontSize:11,color:'var(--text-dim)',marginLeft:8}}>
+                  {nf.data_emissao ? format(new Date(nf.data_emissao),'dd/MM/yyyy') : ''}
                 </span>
               </div>
-              <div style={{display:'flex', alignItems:'center', gap:10}}>
-                <span className="td-mono" style={{fontSize:13, color: Number(nf.volume_saldo_kg) <= 0.01 ? 'var(--danger)' : 'var(--accent-2)', fontWeight:600}}>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <span className="td-mono" style={{fontSize:13,color:Number(nf.volume_saldo_kg)<=0.01?'var(--danger)':'var(--accent-2)',fontWeight:600}}>
                   {fmt4(nf.volume_saldo_kg)} kg
                 </span>
-                <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/nf/${nf.id}`)}>
-                  🔍
-                </button>
+                <button className="btn btn-ghost btn-sm" onClick={()=>navigate(`/nf/${nf.id}`)}>🔍</button>
               </div>
             </div>
           ))}
         </div>
       )}
-      <button className="lote-expand-btn" onClick={() => setOpen(o => !o)}>
-        {open ? '▲ Recolher' : `▼ Ver ${grupo.nfs.length} NF${grupo.nfs.length !== 1 ? 's' : ''}`}
+      <button className="lote-expand-btn" onClick={()=>setOpen(o=>!o)}>
+        {open ? '▲ Recolher' : `▼ Ver ${grupo.nfs.length} NF${grupo.nfs.length!==1?'s':''}`}
       </button>
     </div>
   )
@@ -97,17 +94,17 @@ function LoteCardSaida({ grupo }) {
   const [open, setOpen] = useState(false)
   return (
     <div className="lote-card">
-      <div className="lote-card-header" onClick={() => setOpen(o => !o)}>
+      <div className="lote-card-header" onClick={()=>setOpen(o=>!o)}>
         <div>
           <div className="lote-card-title">Lote <span style={{color:'var(--accent)'}}>{grupo.lote}</span></div>
-          <div className="lote-card-sub">{grupo.saidas.length} saída{grupo.saidas.length !== 1 ? 's' : ''}</div>
+          <div className="lote-card-sub">{grupo.saidas.length} saída{grupo.saidas.length!==1?'s':''}</div>
         </div>
         <div style={{textAlign:'right'}}>
           <div className="lote-card-kg" style={{color:'var(--accent)'}}>{fmt4(grupo.totalFinal)} kg</div>
-          <div style={{fontSize:11, color:'var(--text-dim)'}}>total debitado</div>
+          <div style={{fontSize:11,color:'var(--text-dim)'}}>total debitado</div>
         </div>
       </div>
-      <div style={{display:'flex', gap:16, margin:'8px 0 4px', flexWrap:'wrap', fontSize:12}}>
+      <div style={{display:'flex',gap:16,margin:'8px 0 4px',flexWrap:'wrap',fontSize:12}}>
         <span><span style={{color:'var(--text-dim)'}}>Líq.: </span><span className="td-mono">{fmt4(grupo.totalLiq)} kg</span></span>
         <span><span style={{color:'var(--text-dim)'}}>Romaneios: </span><span className="td-mono">{grupo.saidas.length}</span></span>
       </div>
@@ -116,46 +113,44 @@ function LoteCardSaida({ grupo }) {
           {grupo.saidas.map(s => (
             <div key={s.id} className="lote-nf-row">
               <div>
-                <span className="td-mono" style={{fontWeight:600, fontSize:13}}>{s.romaneio_microdata}</span>
+                <span className="td-mono" style={{fontWeight:600,fontSize:13}}>{s.romaneio_microdata}</span>
                 <span style={{marginLeft:8}}>{tipoBadge(s.tipo_saida)}</span>
               </div>
-              <span className="td-mono" style={{fontSize:13, color:'var(--accent)', fontWeight:600}}>
+              <span className="td-mono" style={{fontSize:13,color:'var(--accent)',fontWeight:600}}>
                 {fmt4(s.volume_abatido_kg)} kg
               </span>
             </div>
           ))}
         </div>
       )}
-      <button className="lote-expand-btn" onClick={() => setOpen(o => !o)}>
-        {open ? '▲ Recolher' : `▼ Ver ${grupo.saidas.length} romaneio${grupo.saidas.length !== 1 ? 's' : ''}`}
+      <button className="lote-expand-btn" onClick={()=>setOpen(o=>!o)}>
+        {open ? '▲ Recolher' : `▼ Ver ${grupo.saidas.length} romaneio${grupo.saidas.length!==1?'s':''}`}
       </button>
     </div>
   )
 }
 
-// ── Página principal ───────────────────────────────────────────────────────
 export default function DashboardPage() {
   const navigate = useNavigate()
-  const [nfs, setNfs]         = useState([])
-  const [saidas, setSaidas]   = useState([])
+  const [nfs,     setNfs]     = useState([])
+  const [saidas,  setSaidas]  = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     Promise.all([listarNFsEntrada(), listarSaidas()])
-      .then(([n, s]) => { setNfs(n); setSaidas(s) })
+      .then(([n,s]) => { setNfs(n); setSaidas(s) })
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [])
 
-  const totalEntrada = nfs.reduce((a, n) => a + Number(n.volume_kg), 0)
-  const totalSaldo   = nfs.reduce((a, n) => a + Number(n.volume_saldo_kg), 0)
-  const totalSaida   = saidas.reduce((a, s) => a + Number(s.volume_abatido_kg), 0)
+  const totalEntrada = nfs.reduce((a,n) => a + Number(n.volume_kg), 0)
+  const totalSaldo   = nfs.reduce((a,n) => a + Number(n.volume_saldo_kg), 0)
+  const totalSaida   = saidas.reduce((a,s) => a + Number(s.volume_abatido_kg), 0)
   const nfsZeradas   = nfs.filter(n => Number(n.volume_saldo_kg) <= 0.01).length
-
   const lotesEntrada = agruparPorLote(nfs)
   const lotesSaida   = agruparSaidasPorLote(saidas)
 
-  if (loading) return <div className="loading"><div className="spinner"></div><div>Carregando...</div></div>
+  if (loading) return <div className="loading"><div className="spinner"/><div>Carregando...</div></div>
 
   return (
     <div>
@@ -164,7 +159,7 @@ export default function DashboardPage() {
         <div className="page-sub">Visão geral do controle de entradas e saídas</div>
       </div>
 
-      {/* ── KPIs ── */}
+      {/* KPIs */}
       <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-label">Total Entrada</div>
@@ -188,92 +183,95 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Layout 2 colunas: esquerda = entradas, direita = saídas ── */}
-      <div className="dashboard-cols">
+      {/*
+        ── GRID DE 4 ÁREAS ──────────────────────────────────────────
+        Área A (linha 1, col 1): NFs Recentes — Saldo
+        Área B (linha 1, col 2): Últimas Saídas
+        Área C (linha 2, col 1): Entradas por Lote POY
+        Área D (linha 2, col 2): Saídas por Lote POY
 
-        {/* ── COLUNA ESQUERDA: Tabela NFs + Cards por Lote de Entrada ── */}
-        <div className="dashboard-col">
-          {/* Tabela NFs Recentes */}
-          <div className="card dash-table-card">
-            <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16}}>
-              <div className="card-title" style={{margin:0}}>NFs Recentes — Saldo</div>
-              <button className="btn btn-ghost btn-sm" onClick={() => navigate('/entrada')}>Ver todas →</button>
-            </div>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr><th>NF</th><th>Lote POY</th><th className="td-right">Saldo (kg)</th><th></th></tr>
-                </thead>
-                <tbody>
-                  {nfs.length === 0 && (
-                    <tr><td colSpan={4}><div className="empty"><div className="empty-icon">📦</div><div className="empty-text">Nenhuma NF</div></div></td></tr>
-                  )}
-                  {nfs.slice(0, 6).map(nf => (
-                    <tr key={nf.id}>
-                      <td className="td-mono" style={{fontWeight:600}}>{nf.numero_nf}</td>
-                      <td className="td-mono">{nf.lote}</td>
-                      <td className="td-right td-mono" style={{color: Number(nf.volume_saldo_kg) <= 0.01 ? 'var(--danger)' : 'var(--accent-2)', fontWeight:600}}>
-                        {fmt4(nf.volume_saldo_kg)}
-                      </td>
-                      <td><button className="btn btn-ghost btn-sm" onClick={() => navigate(`/nf/${nf.id}`)}>🔍</button></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+        grid-template-rows: auto auto
+        Linha 1 usa "1fr" → ambos os cards A e B ficam com mesma altura
+      */}
+      <div className="dash-grid">
+
+        {/* A — NFs Recentes */}
+        <div className="dash-grid-a card">
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
+            <div className="card-title" style={{margin:0}}>NFs Recentes — Saldo</div>
+            <button className="btn btn-ghost btn-sm" onClick={() => navigate('/entrada')}>Ver todas →</button>
           </div>
-
-          {/* Cards Entradas por Lote */}
-          {lotesEntrada.length > 0 && (
-            <div className="card" style={{padding:'14px 18px'}}>
-              <div className="dash-section-divider" style={{marginTop:0}}>Entradas por Lote POY</div>
-              <div className="lote-col-stack">
-                {lotesEntrada.map(g => <LoteCardEntrada key={g.lote} grupo={g} navigate={navigate} />)}
-              </div>
-            </div>
-          )}
+          <div className="table-wrap" style={{flex:1}}>
+            <table>
+              <thead>
+                <tr><th>NF</th><th>Lote POY</th><th className="td-right">Saldo (kg)</th><th></th></tr>
+              </thead>
+              <tbody>
+                {nfs.length === 0 && (
+                  <tr><td colSpan={4}><div className="empty"><div className="empty-icon">📦</div><div className="empty-text">Nenhuma NF</div></div></td></tr>
+                )}
+                {nfs.slice(0,6).map(nf => (
+                  <tr key={nf.id}>
+                    <td className="td-mono" style={{fontWeight:600}}>{nf.numero_nf}</td>
+                    <td className="td-mono">{nf.lote}</td>
+                    <td className="td-right td-mono" style={{color: Number(nf.volume_saldo_kg) <= 0.01 ? 'var(--danger)' : 'var(--accent-2)', fontWeight:600}}>
+                      {fmt4(nf.volume_saldo_kg)}
+                    </td>
+                    <td><button className="btn btn-ghost btn-sm" onClick={() => navigate(`/nf/${nf.id}`)}>🔍</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
-        {/* ── COLUNA DIREITA ── */}
-        <div className="dashboard-col">
-          {/* Tabela Últimas Saídas */}
-          <div className="card dash-table-card">
-            <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16}}>
-              <div className="card-title" style={{margin:0}}>Últimas Saídas</div>
-              <button className="btn btn-ghost btn-sm" onClick={() => navigate('/saida')}>Ver todas →</button>
-            </div>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr><th>Romaneio</th><th>Lote POY</th><th>Tipo</th><th className="td-right">Vol. Final</th></tr>
-                </thead>
-                <tbody>
-                  {saidas.length === 0 && (
-                    <tr><td colSpan={4}><div className="empty"><div className="empty-icon">📋</div><div className="empty-text">Nenhuma saída</div></div></td></tr>
-                  )}
-                  {saidas.slice(0, 6).map(s => (
-                    <tr key={s.id}>
-                      <td className="td-mono">{s.romaneio_microdata}</td>
-                      <td className="td-mono">{s.lote_poy || s.lote_produto || '—'}</td>
-                      <td>{tipoBadge(s.tipo_saida)}</td>
-                      <td className="td-right td-mono" style={{color:'var(--accent)'}}>{fmt(s.volume_abatido_kg)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        {/* B — Últimas Saídas */}
+        <div className="dash-grid-b card">
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
+            <div className="card-title" style={{margin:0}}>Últimas Saídas</div>
+            <button className="btn btn-ghost btn-sm" onClick={() => navigate('/saida')}>Ver todas →</button>
+          </div>
+          <div className="table-wrap" style={{flex:1}}>
+            <table>
+              <thead>
+                <tr><th>Romaneio</th><th>Lote POY</th><th>Tipo</th><th className="td-right">Vol. Final</th></tr>
+              </thead>
+              <tbody>
+                {saidas.length === 0 && (
+                  <tr><td colSpan={4}><div className="empty"><div className="empty-icon">📋</div><div className="empty-text">Nenhuma saída</div></div></td></tr>
+                )}
+                {saidas.slice(0,6).map(s => (
+                  <tr key={s.id}>
+                    <td className="td-mono">{s.romaneio_microdata}</td>
+                    <td className="td-mono">{s.lote_poy || s.lote_produto || '—'}</td>
+                    <td>{tipoBadge(s.tipo_saida)}</td>
+                    <td className="td-right td-mono" style={{color:'var(--accent)'}}>{fmt(s.volume_abatido_kg)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* C — Entradas por Lote */}
+        {lotesEntrada.length > 0 && (
+          <div className="dash-grid-c card" style={{padding:'14px 18px'}}>
+            <div className="dash-section-divider" style={{marginTop:0}}>Entradas por Lote POY</div>
+            <div className="lote-col-stack">
+              {lotesEntrada.map(g => <LoteCardEntrada key={g.lote} grupo={g} navigate={navigate} />)}
             </div>
           </div>
+        )}
 
-          {/* Cards Saídas por Lote */}
-          {lotesSaida.length > 0 && (
-            <div className="card" style={{padding:'14px 18px'}}>
-              <div className="dash-section-divider" style={{marginTop:0}}>Saídas por Lote POY</div>
-              <div className="lote-col-stack">
-                {lotesSaida.map(g => <LoteCardSaida key={g.lote} grupo={g} />)}
-              </div>
+        {/* D — Saídas por Lote */}
+        {lotesSaida.length > 0 && (
+          <div className="dash-grid-d card" style={{padding:'14px 18px'}}>
+            <div className="dash-section-divider" style={{marginTop:0}}>Saídas por Lote POY</div>
+            <div className="lote-col-stack">
+              {lotesSaida.map(g => <LoteCardSaida key={g.lote} grupo={g} />)}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
       </div>
     </div>

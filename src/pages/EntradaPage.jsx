@@ -143,7 +143,10 @@ export default function EntradaPage() {
       })
       toast('Dados extraídos com sucesso! Confira os campos.')
     } catch (e) {
-      toast('Erro ao extrair dados do PDF. Preencha manualmente.', 'error')
+      const msg = e.message?.includes('ANTHROPIC_API_KEY')
+        ? '⚠ Chave da API não configurada na Vercel. Consulte o README.'
+        : 'Erro ao extrair dados do PDF. Preencha manualmente.'
+      toast(msg, 'error')
     } finally {
       setExtracting(false)
       if (pdfRef.current) pdfRef.current.value = ''
