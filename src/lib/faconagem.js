@@ -415,7 +415,9 @@ export async function deletarSaida(saidaId, usuario) {
 // Verifica se número de NF já existe em qualquer unidade
 export async function verificarNFDuplicada(numeroNF) {
   const snap = await getDocs(query(collection(db, 'nf_entrada'), where('numero_nf', '==', String(numeroNF).trim())))
-  return !snap.empty
+  if (snap.empty) return null
+  const nf = snap.docs[0].data()
+  return { existe: true, unidade_id: nf.unidade_id || '' }
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -633,50 +635,4 @@ export function gerarRomaneioPDF(saida, alocacoes, config = {}) {
   pdoc.save(`romaneio_${saida.romaneio_microdata}_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`)
 }
 
-// ─────────────────────────────────────────────────────────────────
-// SAÍDA — DELETAR + EDITAR (estorna alocações e restaura saldo)
-// ─────────────────────────────────────────────────────────────────
 
-export async function deletarSaida(saidaId, usuario) {
-  // Busca as alocações para restaurar saldos das NFs
-  const alocSnap = await getDocs(
-    query(collection(db, 'alocacao_saida'), where('saida_id', '==', saidaId))
-  )
-  const batch = writeBatch(db)
-  const now   = Timestamp.now()
-
-  // Restaura saldo em cada NF de entrada
-  for (const alocDoc of alocSnap.docs) {
-    const aloc     = alocDoc.data()
-    const nfSnap   = await getDoc(doc(db, 'nf_entrada', aloc.nf_entrada_id))
-    if (nfSnap.exists()) {
-      const saldoAtual  = Number(nfSnap.data().volume_saldo_kg || 0)
-      const novoSaldo   = saldoAtual + Number(aloc.volume_alocado_kg)
-      batch.update(doc(db, 'nf_entrada', aloc.nf_entrada_id), {
-        volume_saldo_kg: novoSaldo, atualizado_em: now
-      })
-    }
-    batch.delete(alocDoc.ref)
-  }
-
-  batch.delete(doc(db, 'saida', saidaId))
-  await batch.commit()
-  await registrarLog('SAIDA_DELETADA', `Saída ${saidaId} removida`, usuario)
-}
-
-// ─────────────────────────────────────────────────────────────────
-// NF ENTRADA — VERIFICAR DUPLICATA (qualquer unidade)
-// ─────────────────────────────────────────────────────────────────
-
-export async function verificarNFDuplicada(numeroNF) {
-  const snap = await getDocs(
-    query(collection(db, 'nf_entrada'), where('numero_nf', '==', String(numeroNF).trim()))
-  )
-  if (snap.empty) return null
-  const nf = snap.docs[0].data()
-  return {
-    existe: true,
-    unidade_id: nf.unidade_id || '',
-    data_emissao: nf.data_emissao,
-  }
-}
