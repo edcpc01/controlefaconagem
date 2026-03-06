@@ -1,103 +1,292 @@
-import { createContext, useContext, useEffect, useState } from 'react'
-import { db } from './firebase'
-import {
-  doc, getDoc, setDoc, getDocs, collection, updateDoc, Timestamp, onSnapshot
-} from 'firebase/firestore'
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { listarNFsEntrada, listarSaidas, TIPOS_SAIDA } from '../lib/faconagem'
+import { useUser } from '../lib/UserContext'
+import { format } from 'date-fns'
 
-export const UNIDADES_DEFAULT = [
-  { id: 'corradi_matriz', label: 'Corradi Matriz' },
-  { id: 'corradi_filial', label: 'Corradi Filial' },
-]
+const fmt  = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const fmt4 = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
 
-const UserContext = createContext(null)
-
-async function criarPerfil(uid, email, displayName) {
-  const ref    = doc(db, 'usuarios', uid)
-  const perfil = {
-    email,
-    nome:       displayName || email || uid,
-    role:       'analista',   // todo novo usuário começa como analista
-    unidade_id: '',
-    criado_em:  Timestamp.now(),
-  }
-  await setDoc(ref, perfil, { merge: false })
-  return perfil
+function tipoBadge(tipo) {
+  const map = { faturamento:'badge-blue', sucata:'badge-danger', estopa:'badge-warn', dev_qualidade:'badge-green', dev_processo:'badge-green', dev_final_campanha:'badge-green' }
+  const label = TIPOS_SAIDA.find(t => t.value === tipo)?.label || tipo
+  return <span className={`badge ${map[tipo] || 'badge-blue'}`}>{label}</span>
 }
 
-export function UserProvider({ children, firebaseUser }) {
-  const [perfil,       setPerfil]       = useState(null)
-  const [loadingPerfil, setLoadingPerfil] = useState(true)
+function agruparPorLote(nfs) {
+  const mapa = {}
+  for (const nf of nfs) {
+    const key = nf.lote || '(sem lote)'
+    if (!mapa[key]) mapa[key] = { lote: key, nfs: [], totalKg: 0, saldoKg: 0 }
+    mapa[key].nfs.push(nf)
+    mapa[key].totalKg += Number(nf.volume_kg)
+    mapa[key].saldoKg += Number(nf.volume_saldo_kg)
+  }
+  return Object.values(mapa).sort((a, b) => b.totalKg - a.totalKg)
+}
 
-  // Unidade ativa — admin escolhe livremente, analista herda do perfil
-  const [unidadeAtiva, setUnidadeAtiva] = useState(
-    () => sessionStorage.getItem('unidade_ativa') || ''
+function agruparSaidasPorLote(saidas) {
+  const mapa = {}
+  for (const s of saidas) {
+    const key = s.lote_poy || s.lote_produto || '(sem lote)'
+    if (!mapa[key]) mapa[key] = { lote: key, saidas: [], totalLiq: 0, totalFinal: 0 }
+    mapa[key].saidas.push(s)
+    mapa[key].totalLiq   += Number(s.volume_liquido_kg || s.volume_bruto_kg || 0)
+    mapa[key].totalFinal += Number(s.volume_abatido_kg || 0)
+  }
+  return Object.values(mapa).sort((a, b) => b.totalFinal - a.totalFinal)
+}
+
+function LoteCardEntrada({ grupo, navigate }) {
+  const [open, setOpen] = useState(false)
+  const pct = grupo.totalKg > 0 ? (grupo.saldoKg / grupo.totalKg) * 100 : 0
+  return (
+    <div className="lote-card">
+      <div className="lote-card-header" onClick={() => setOpen(o => !o)}>
+        <div>
+          <div className="lote-card-title">Lote <span style={{color:'var(--accent)'}}>{grupo.lote}</span></div>
+          <div className="lote-card-sub">{grupo.nfs.length} NF{grupo.nfs.length !== 1 ? 's' : ''}</div>
+        </div>
+        <div style={{textAlign:'right'}}>
+          <div className="lote-card-kg" style={{color: pct < 10 ? 'var(--danger)' : 'var(--accent-2)'}}>
+            {fmt4(grupo.saldoKg)} kg
+          </div>
+          <div style={{fontSize:11, color:'var(--text-dim)'}}>saldo de {fmt(grupo.totalKg)} kg</div>
+        </div>
+      </div>
+      <div className="progress-bar-bg" style={{margin:'10px 0 4px'}}>
+        <div className="progress-bar-fill" style={{
+          width:`${Math.min(100-pct,100)}%`,
+          background: pct < 10 ? 'var(--danger)' : pct < 30 ? 'var(--warn)' : 'linear-gradient(90deg,var(--accent),var(--accent-2))'
+        }}/>
+      </div>
+      <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--text-dim)',marginBottom: open ? 10 : 0}}>
+        <span>{(100-pct).toFixed(1)}% consumido</span>
+        <span>{pct.toFixed(1)}% disponível</span>
+      </div>
+      {open && (
+        <div className="lote-nf-list">
+          {grupo.nfs.map(nf => (
+            <div key={nf.id} className="lote-nf-row">
+              <div>
+                <span className="td-mono" style={{fontWeight:600,fontSize:13}}>NF {nf.numero_nf}</span>
+                <span style={{fontSize:11,color:'var(--text-dim)',marginLeft:8}}>
+                  {nf.data_emissao ? format(new Date(nf.data_emissao),'dd/MM/yyyy') : ''}
+                </span>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <span className="td-mono" style={{fontSize:13,color:Number(nf.volume_saldo_kg)<=0.01?'var(--danger)':'var(--accent-2)',fontWeight:600}}>
+                  {fmt4(nf.volume_saldo_kg)} kg
+                </span>
+                <button className="btn btn-ghost btn-sm" onClick={()=>navigate(`/nf/${nf.id}`)}>🔍</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <button className="lote-expand-btn" onClick={()=>setOpen(o=>!o)}>
+        {open ? '▲ Recolher' : `▼ Ver ${grupo.nfs.length} NF${grupo.nfs.length!==1?'s':''}`}
+      </button>
+    </div>
   )
+}
+
+function LoteCardSaida({ grupo }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="lote-card">
+      <div className="lote-card-header" onClick={()=>setOpen(o=>!o)}>
+        <div>
+          <div className="lote-card-title">Lote <span style={{color:'var(--accent)'}}>{grupo.lote}</span></div>
+          <div className="lote-card-sub">{grupo.saidas.length} saída{grupo.saidas.length!==1?'s':''}</div>
+        </div>
+        <div style={{textAlign:'right'}}>
+          <div className="lote-card-kg" style={{color:'var(--accent)'}}>{fmt4(grupo.totalFinal)} kg</div>
+          <div style={{fontSize:11,color:'var(--text-dim)'}}>total debitado</div>
+        </div>
+      </div>
+      <div style={{display:'flex',gap:16,margin:'8px 0 4px',flexWrap:'wrap',fontSize:12}}>
+        <span><span style={{color:'var(--text-dim)'}}>Líq.: </span><span className="td-mono">{fmt4(grupo.totalLiq)} kg</span></span>
+        <span><span style={{color:'var(--text-dim)'}}>Romaneios: </span><span className="td-mono">{grupo.saidas.length}</span></span>
+      </div>
+      {open && (
+        <div className="lote-nf-list">
+          {grupo.saidas.map(s => (
+            <div key={s.id} className="lote-nf-row">
+              <div>
+                <span className="td-mono" style={{fontWeight:600,fontSize:13}}>{s.romaneio_microdata}</span>
+                <span style={{marginLeft:8}}>{tipoBadge(s.tipo_saida)}</span>
+              </div>
+              <span className="td-mono" style={{fontSize:13,color:'var(--accent)',fontWeight:600}}>
+                {fmt4(s.volume_abatido_kg)} kg
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      <button className="lote-expand-btn" onClick={()=>setOpen(o=>!o)}>
+        {open ? '▲ Recolher' : `▼ Ver ${grupo.saidas.length} romaneio${grupo.saidas.length!==1?'s':''}`}
+      </button>
+    </div>
+  )
+}
+
+export default function DashboardPage() {
+  const navigate = useNavigate()
+  const { unidadeAtiva } = useUser() || {}
+  const [nfs,     setNfs]     = useState([])
+  const [saidas,  setSaidas]  = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!firebaseUser) {
-      setPerfil(null)
-      setLoadingPerfil(false)
-      return
-    }
+    setLoading(true)
+    Promise.all([listarNFsEntrada(unidadeAtiva || ''), listarSaidas(unidadeAtiva || '')])
+      .then(([n,s]) => { setNfs(n); setSaidas(s) })
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [unidadeAtiva])
 
-    const ref  = doc(db, 'usuarios', firebaseUser.uid)
-    let   init = true   // primeira snapshot
+  const totalEntrada = nfs.reduce((a,n) => a + Number(n.volume_kg), 0)
+  const totalSaldo   = nfs.reduce((a,n) => a + Number(n.volume_saldo_kg), 0)
+  const totalSaida   = saidas.reduce((a,s) => a + Number(s.volume_abatido_kg), 0)
+  const nfsZeradas   = nfs.filter(n => Number(n.volume_saldo_kg) <= 0.01).length
+  const lotesEntrada = agruparPorLote(nfs)
+  const lotesSaida   = agruparSaidasPorLote(saidas)
 
-    const unsub = onSnapshot(ref, async snap => {
-      let p
-      if (snap.exists()) {
-        p = snap.data()
-      } else if (init) {
-        // Primeiro login — cria perfil
-        try { p = await criarPerfil(firebaseUser.uid, firebaseUser.email, firebaseUser.displayName) }
-        catch { p = { email: firebaseUser.email, nome: firebaseUser.displayName, role: 'analista', unidade_id: '' } }
-      } else {
-        return   // snapshot intermediário antes do setDoc propagar
-      }
-      init = false
-      setPerfil(p)
-
-      // Analista sempre usa a unidade do seu perfil
-      if (p.role !== 'admin' && p.unidade_id) {
-        setUnidadeAtiva(p.unidade_id)
-        sessionStorage.setItem('unidade_ativa', p.unidade_id)
-      }
-      setLoadingPerfil(false)
-    }, () => {
-      // Erro de permissão (antes das rules do Firestore estarem configuradas)
-      setLoadingPerfil(false)
-    })
-
-    return unsub
-  }, [firebaseUser?.uid])
-
-  const isAdmin = perfil?.role === 'admin'
-
-  const trocarUnidade = (id) => {
-    if (!isAdmin) return   // só admin pode trocar
-    setUnidadeAtiva(id)
-    sessionStorage.setItem('unidade_ativa', id)
-  }
-
-  const atualizarUsuario = async (uid, campos) => {
-    await updateDoc(doc(db, 'usuarios', uid), campos)
-  }
-
-  const listarUsuarios = async () => {
-    const snap = await getDocs(collection(db, 'usuarios'))
-    return snap.docs.map(d => ({ id: d.id, ...d.data() }))
-  }
+  if (loading) return <div className="loading"><div className="spinner"/><div>Carregando...</div></div>
 
   return (
-    <UserContext.Provider value={{
-      perfil, isAdmin, unidadeAtiva, loadingPerfil,
-      trocarUnidade, atualizarUsuario, listarUsuarios,
-    }}>
-      {children}
-    </UserContext.Provider>
-  )
-}
+    <div>
+      <div className="page-header">
+        <div className="page-title">Dashboard <span>Façonagem</span></div>
+        <div className="page-sub">Visão geral do controle de entradas e saídas</div>
+      </div>
 
-export function useUser() {
-  return useContext(UserContext)
+      {/* KPIs */}
+      <div className="stats-grid">
+        <div className="stat-card">
+          <div className="stat-label">Total Entrada</div>
+          <div className="stat-value">{fmt(totalEntrada)}</div>
+          <div className="stat-unit">kg em {nfs.length} NFs</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Saldo Disponível</div>
+          <div className="stat-value" style={{color:'var(--accent)'}}>{fmt(totalSaldo)}</div>
+          <div className="stat-unit">kg em estoque</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Total Saídas</div>
+          <div className="stat-value">{fmt(totalSaida)}</div>
+          <div className="stat-unit">kg em {saidas.length} romaneios</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">NFs Zeradas</div>
+          <div className="stat-value" style={{color: nfsZeradas > 0 ? 'var(--warn)' : 'var(--text)'}}>{nfsZeradas}</div>
+          <div className="stat-unit">de {nfs.length} NFs</div>
+        </div>
+      </div>
+
+      {/*
+        ── GRID DE 4 ÁREAS ──────────────────────────────────────────
+        Área A (linha 1, col 1): NFs Recentes — Saldo
+        Área B (linha 1, col 2): Últimas Saídas
+        Área C (linha 2, col 1): Entradas por Lote POY
+        Área D (linha 2, col 2): Saídas por Lote POY
+
+        grid-template-rows: auto auto
+        Linha 1 usa "1fr" → ambos os cards A e B ficam com mesma altura
+      */}
+      <div className="dash-grid">
+
+        {/* A — NFs Recentes */}
+        <div className="dash-grid-a card">
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
+            <div className="card-title" style={{margin:0}}>NFs Recentes — Saldo</div>
+            <button className="btn btn-ghost btn-sm" onClick={() => navigate('/entrada')}>Ver todas →</button>
+          </div>
+          <div className="table-wrap" style={{flex:1}}>
+            <table>
+              <thead>
+                <tr>
+                  <th>NF</th>
+                  <th>Lote POY</th>
+                  <th className="td-right">Saldo (kg)</th>
+                  <th className="col-hide-mobile"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {nfs.length === 0 && (
+                  <tr><td colSpan={4}><div className="empty"><div className="empty-icon">📦</div><div className="empty-text">Nenhuma NF</div></div></td></tr>
+                )}
+                {nfs.slice(0,6).map(nf => (
+                  <tr key={nf.id}>
+                    <td className="td-mono" style={{fontWeight:600}}>{nf.numero_nf}</td>
+                    <td className="td-mono">{nf.lote}</td>
+                    <td className="td-right td-mono" style={{color: Number(nf.volume_saldo_kg) <= 0.01 ? 'var(--danger)' : 'var(--accent-2)', fontWeight:600}}>
+                      {fmt4(nf.volume_saldo_kg)}
+                    </td>
+                    <td className="col-hide-mobile"><button className="btn btn-ghost btn-sm" onClick={() => navigate(`/nf/${nf.id}`)}>🔍</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* B — Últimas Saídas */}
+        <div className="dash-grid-b card">
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
+            <div className="card-title" style={{margin:0}}>Últimas Saídas</div>
+            <button className="btn btn-ghost btn-sm" onClick={() => navigate('/saida')}>Ver todas →</button>
+          </div>
+          <div className="table-wrap" style={{flex:1}}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Romaneio</th>
+                  <th className="col-hide-mobile">Lote POY</th>
+                  <th>Tipo</th>
+                  <th className="td-right">Vol. Final</th>
+                </tr>
+              </thead>
+              <tbody>
+                {saidas.length === 0 && (
+                  <tr><td colSpan={4}><div className="empty"><div className="empty-icon">📋</div><div className="empty-text">Nenhuma saída</div></div></td></tr>
+                )}
+                {saidas.slice(0,6).map(s => (
+                  <tr key={s.id}>
+                    <td className="td-mono">{s.romaneio_microdata}</td>
+                    <td className="td-mono col-hide-mobile">{s.lote_poy || s.lote_produto || '—'}</td>
+                    <td>{tipoBadge(s.tipo_saida)}</td>
+                    <td className="td-right td-mono" style={{color:'var(--accent)'}}>{fmt(s.volume_abatido_kg)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* C — Entradas por Lote */}
+        {lotesEntrada.length > 0 && (
+          <div className="dash-grid-c card" style={{padding:'14px 18px'}}>
+            <div className="dash-section-divider" style={{marginTop:0}}>Entradas por Lote POY</div>
+            <div className="lote-col-stack">
+              {lotesEntrada.map(g => <LoteCardEntrada key={g.lote} grupo={g} navigate={navigate} />)}
+            </div>
+          </div>
+        )}
+
+        {/* D — Saídas por Lote */}
+        {lotesSaida.length > 0 && (
+          <div className="dash-grid-d card" style={{padding:'14px 18px'}}>
+            <div className="dash-section-divider" style={{marginTop:0}}>Saídas por Lote POY</div>
+            <div className="lote-col-stack">
+              {lotesSaida.map(g => <LoteCardSaida key={g.lote} grupo={g} />)}
+            </div>
+          </div>
+        )}
+
+      </div>
+    </div>
+  )
 }
