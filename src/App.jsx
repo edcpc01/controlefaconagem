@@ -128,7 +128,9 @@ function Layout({ children }) {
 
           {/* Actions */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <UnidadeSelector />
+            <div className="header-unit-selector">
+              <UnidadeSelector />
+            </div>
             <button className="btn-theme-icon" onClick={toggle} title="Alternar tema">
               {theme === 'dark' ? '☀' : '🌙'}
             </button>
