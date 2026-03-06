@@ -47,10 +47,10 @@
     align-items: center;
     gap: 12px;
     box-shadow: 0 -8px 32px rgba(0,212,170,.18);
-    transform: translateY(100%);
+    transform: translateY(0);
     transition: transform .4s cubic-bezier(.22,1,.36,1);
   }
-  #install-banner.visible { transform: translateY(0); }
+  #install-banner.hidden { transform: translateY(110%); }
 
   .banner-icon {
     width: 48px; height: 48px;
@@ -398,24 +398,16 @@
   const btnInstall = document.getElementById('btn-install-app');
   const btnDismiss = document.getElementById('btn-dismiss');
 
-  // Listen for native beforeinstallprompt
+  // Hide if already installed as PWA
+  if (window.matchMedia('(display-mode: standalone)').matches) {
+    banner.classList.add('hidden');
+  }
+
+  // Capture native install prompt (Android Chrome)
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredPrompt = e;
-    showBanner();
   });
-
-  // On iOS/Safari or when previewing, show banner after 1.5s
-  setTimeout(() => {
-    if (!window.matchMedia('(display-mode: standalone)').matches) {
-      showBanner();
-    }
-  }, 1500);
-
-  function showBanner() {
-    if (sessionStorage.getItem('install-dismissed')) return;
-    banner.classList.add('visible');
-  }
 
   btnInstall.addEventListener('click', async () => {
     if (deferredPrompt) {
@@ -423,15 +415,13 @@
       const { outcome } = await deferredPrompt.userChoice;
       deferredPrompt = null;
     } else {
-      // iOS guidance
       alert('Para instalar no iPhone: toque em Compartilhar ⎙ → "Adicionar à Tela de Início"');
     }
-    banner.classList.remove('visible');
+    banner.classList.add('hidden');
   });
 
   btnDismiss.addEventListener('click', () => {
-    banner.classList.remove('visible');
-    sessionStorage.setItem('install-dismissed', '1');
+    banner.classList.add('hidden');
   });
 </script>
 </body>
