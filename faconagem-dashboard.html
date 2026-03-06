@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#0d1b2e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Façonagem">
+<title>Dashboard Façonagem – Rhodia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Barlow:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #080f1c;
+    --surface:  #0d1b2e;
+    --card:     #0f2035;
+    --border:   #1a3050;
+    --accent1:  #00d4aa;
+    --accent2:  #4d9fff;
+    --warn:     #f59e0b;
+    --danger:   #ef4444;
+    --text:     #e8f0fe;
+    --muted:    #7a9bbf;
+    --radius:   16px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Barlow', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── INSTALL BANNER ── */
+  #install-banner {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 1000;
+    background: linear-gradient(135deg, #0d2a45 0%, #0a1f36 100%);
+    border-top: 1.5px solid var(--accent1);
+    padding: 14px 16px 28px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 -8px 32px rgba(0,212,170,.18);
+    transform: translateY(100%);
+    transition: transform .4s cubic-bezier(.22,1,.36,1);
+  }
+  #install-banner.visible { transform: translateY(0); }
+
+  .banner-icon {
+    width: 48px; height: 48px;
+    background: linear-gradient(135deg, var(--accent1), var(--accent2));
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    font-size: 22px;
+  }
+  .banner-text { flex: 1; }
+  .banner-text strong { display: block; font-size: 14px; font-weight: 700; color: var(--text); }
+  .banner-text span   { font-size: 12px; color: var(--muted); }
+
+  .banner-actions { display: flex; flex-direction: column; gap: 6px; }
+  .btn-install {
+    background: linear-gradient(135deg, var(--accent1), var(--accent2));
+    color: #040d1a;
+    border: none; border-radius: 8px;
+    padding: 8px 16px;
+    font-family: 'Barlow', sans-serif;
+    font-weight: 700; font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: opacity .2s;
+  }
+  .btn-install:active { opacity: .8; }
+  .btn-dismiss {
+    background: none; border: 1px solid var(--border);
+    color: var(--muted); border-radius: 8px;
+    padding: 6px 12px; font-size: 11px;
+    font-family: 'Barlow', sans-serif;
+    cursor: pointer;
+  }
+
+  /* ── TOP BAR ── */
+  .topbar {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(8,15,28,.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .topbar-logo {
+    width: 34px; height: 34px;
+    background: linear-gradient(135deg, var(--accent1), var(--accent2));
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0;
+  }
+  .topbar-info { flex: 1; }
+  .topbar-info .brand  { font-weight: 800; font-size: 15px; line-height: 1; letter-spacing: .5px; }
+  .topbar-info .sub    { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; margin-top: 2px; }
+
+  .unit-pill {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 6px 12px;
+    font-size: 11px; font-weight: 600; color: var(--muted);
+    display: flex; align-items: center; gap: 5px;
+    cursor: pointer;
+  }
+  .unit-pill svg { width: 12px; height: 12px; }
+
+  .avatar {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, var(--accent2), #7b5ea7);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 13px; color: #fff;
+  }
+
+  /* ── MAIN ── */
+  main {
+    padding: 20px 16px 120px;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+
+  .page-title {
+    margin-bottom: 4px;
+    font-size: 22px; font-weight: 800;
+    letter-spacing: -.3px;
+  }
+  .page-title span { color: var(--accent1); }
+  .page-sub { font-size: 12px; color: var(--muted); margin-bottom: 20px; }
+
+  /* ── KPI GRID ── */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+
+  .kpi-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 14px 14px;
+    position: relative;
+    overflow: hidden;
+    animation: fadeUp .5s ease both;
+  }
+  .kpi-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 2.5px;
+  }
+  .kpi-card.green::before  { background: linear-gradient(90deg, var(--accent1), transparent); }
+  .kpi-card.blue::before   { background: linear-gradient(90deg, var(--accent2), transparent); }
+  .kpi-card.warn::before   { background: linear-gradient(90deg, var(--warn), transparent); }
+  .kpi-card.danger::before { background: linear-gradient(90deg, var(--danger), transparent); }
+
+  .kpi-label {
+    font-size: 9.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 1.2px;
+    color: var(--muted); margin-bottom: 8px;
+  }
+  .kpi-value {
+    font-family: 'Space Mono', monospace;
+    font-size: 20px; font-weight: 700; line-height: 1;
+    margin-bottom: 6px;
+  }
+  .kpi-card.green  .kpi-value { color: var(--accent1); }
+  .kpi-card.blue   .kpi-value { color: var(--accent2); }
+  .kpi-card.warn   .kpi-value { color: var(--warn); }
+  .kpi-card.danger .kpi-value { color: var(--danger); }
+
+  .kpi-meta { font-size: 10.5px; color: var(--muted); font-weight: 500; }
+
+  /* ── SECTION HEADER ── */
+  .section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .section-title {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted);
+  }
+  .section-title::before {
+    content: '';
+    display: block; width: 3px; height: 14px;
+    background: var(--accent2); border-radius: 2px;
+  }
+  .btn-ver {
+    font-size: 11px; font-weight: 600;
+    color: var(--accent2);
+    background: none; border: none;
+    cursor: pointer; letter-spacing: .3px;
+  }
+
+  /* ── TABLE ── */
+  .nf-table {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .nf-table-head {
+    display: grid;
+    grid-template-columns: 80px 1fr auto 36px;
+    padding: 10px 14px;
+    background: rgba(255,255,255,.03);
+    border-bottom: 1px solid var(--border);
+  }
+  .nf-table-head span {
+    font-size: 9px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted);
+  }
+  .nf-row {
+    display: grid;
+    grid-template-columns: 80px 1fr auto 36px;
+    align-items: center;
+    padding: 14px 14px;
+    border-bottom: 1px solid rgba(26,48,80,.6);
+    transition: background .15s;
+  }
+  .nf-row:last-child { border-bottom: none; }
+  .nf-row:active { background: rgba(255,255,255,.03); }
+
+  .nf-num  { font-weight: 800; font-size: 14px; color: var(--text); }
+  .nf-lote { font-size: 12px; color: var(--muted); }
+  .nf-saldo {
+    font-family: 'Space Mono', monospace;
+    font-size: 13px; font-weight: 700;
+    text-align: right; padding-right: 8px;
+  }
+  .nf-saldo.pos  { color: var(--accent1); }
+  .nf-saldo.zero { color: var(--danger); }
+
+  .nf-btn {
+    width: 28px; height: 28px;
+    background: rgba(77,159,255,.12);
+    border: 1px solid rgba(77,159,255,.25);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    color: var(--accent2);
+    flex-shrink: 0;
+  }
+  .nf-btn svg { width: 13px; height: 13px; }
+
+  /* ── STATUS BADGE ── */
+  .badge-zeroed {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: rgba(239,68,68,.12);
+    border: 1px solid rgba(239,68,68,.3);
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 10px; font-weight: 700; color: var(--danger);
+    margin-top: 4px;
+  }
+  .badge-zeroed::before {
+    content: ''; width: 6px; height: 6px;
+    background: var(--danger); border-radius: 50%;
+    animation: pulse 1.5s infinite;
+  }
+
+  /* ── ANIMATIONS ── */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: .3; }
+  }
+
+  .kpi-card:nth-child(1) { animation-delay: .05s; }
+  .kpi-card:nth-child(2) { animation-delay: .10s; }
+  .kpi-card:nth-child(3) { animation-delay: .15s; }
+  .kpi-card:nth-child(4) { animation-delay: .20s; }
+</style>
+</head>
+<body>
+
+<!-- ── INSTALL BANNER ── -->
+<div id="install-banner">
+  <div class="banner-icon">📦</div>
+  <div class="banner-text">
+    <strong>Instalar Façonagem</strong>
+    <span>Acesse rapidamente na tela inicial</span>
+  </div>
+  <div class="banner-actions">
+    <button class="btn-install" id="btn-install-app">Instalar</button>
+    <button class="btn-dismiss" id="btn-dismiss">Agora não</button>
+  </div>
+</div>
+
+<!-- ── TOP BAR ── -->
+<header class="topbar">
+  <div class="topbar-logo">🏭</div>
+  <div class="topbar-info">
+    <div class="brand">Façonagem</div>
+    <div class="sub">Rhodia</div>
+  </div>
+  <div class="unit-pill">
+    🏢 Todas as unidades
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+  </div>
+  <div class="avatar">E</div>
+</header>
+
+<!-- ── MAIN CONTENT ── -->
+<main>
+  <h1 class="page-title">Dashboard <span>Façonagem</span></h1>
+  <p class="page-sub">Visão geral do controle de entradas e saídas</p>
+
+  <!-- KPIs -->
+  <div class="kpi-grid">
+    <div class="kpi-card green">
+      <div class="kpi-label">Total Entrada</div>
+      <div class="kpi-value">23.796,73</div>
+      <div class="kpi-meta">kg em 3 NFs</div>
+    </div>
+    <div class="kpi-card blue">
+      <div class="kpi-label">Saldo Disponível</div>
+      <div class="kpi-value">16.905,24</div>
+      <div class="kpi-meta">kg em estoque</div>
+    </div>
+    <div class="kpi-card warn">
+      <div class="kpi-label">Total Saídas</div>
+      <div class="kpi-value">29.146,16</div>
+      <div class="kpi-meta">kg em 11 romaneios</div>
+    </div>
+    <div class="kpi-card danger">
+      <div class="kpi-label">NFs Zeradas</div>
+      <div class="kpi-value">1</div>
+      <div class="kpi-meta">de 3 NFs</div>
+      <div class="badge-zeroed">Atenção</div>
+    </div>
+  </div>
+
+  <!-- NFs Recentes -->
+  <div class="section-header">
+    <div class="section-title">NFs Recentes — Saldo</div>
+    <button class="btn-ver">Ver todas →</button>
+  </div>
+
+  <div class="nf-table">
+    <div class="nf-table-head">
+      <span>NF</span>
+      <span>Lote POY</span>
+      <span style="text-align:right;padding-right:8px">Saldo (KG)</span>
+      <span></span>
+    </div>
+
+    <div class="nf-row">
+      <div class="nf-num">89941</div>
+      <div class="nf-lote">5465</div>
+      <div class="nf-saldo pos">7.159,7039</div>
+      <div class="nf-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+      </div>
+    </div>
+
+    <div class="nf-row">
+      <div class="nf-num">99116</div>
+      <div class="nf-lote">5327</div>
+      <div class="nf-saldo pos">9.745,54</div>
+      <div class="nf-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+      </div>
+    </div>
+
+    <div class="nf-row">
+      <div class="nf-num">99640</div>
+      <div class="nf-lote">5327</div>
+      <div class="nf-saldo zero">0,00</div>
+      <div class="nf-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+  // ── PWA Install Banner Logic ──
+  let deferredPrompt = null;
+  const banner = document.getElementById('install-banner');
+  const btnInstall = document.getElementById('btn-install-app');
+  const btnDismiss = document.getElementById('btn-dismiss');
+
+  // Listen for native beforeinstallprompt
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    showBanner();
+  });
+
+  // On iOS/Safari or when previewing, show banner after 1.5s
+  setTimeout(() => {
+    if (!window.matchMedia('(display-mode: standalone)').matches) {
+      showBanner();
+    }
+  }, 1500);
+
+  function showBanner() {
+    if (sessionStorage.getItem('install-dismissed')) return;
+    banner.classList.add('visible');
+  }
+
+  btnInstall.addEventListener('click', async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      deferredPrompt = null;
+    } else {
+      // iOS guidance
+      alert('Para instalar no iPhone: toque em Compartilhar ⎙ → "Adicionar à Tela de Início"');
+    }
+    banner.classList.remove('visible');
+  });
+
+  btnDismiss.addEventListener('click', () => {
+    banner.classList.remove('visible');
+    sessionStorage.setItem('install-dismissed', '1');
+  });
+</script>
+</body>
+</html>
