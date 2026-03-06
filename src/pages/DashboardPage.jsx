@@ -207,7 +207,12 @@ export default function DashboardPage() {
           <div className="table-wrap" style={{flex:1}}>
             <table>
               <thead>
-                <tr><th>NF</th><th>Lote POY</th><th className="td-right">Saldo (kg)</th><th></th></tr>
+                <tr>
+                  <th>NF</th>
+                  <th>Lote POY</th>
+                  <th className="td-right">Saldo (kg)</th>
+                  <th className="col-hide-mobile"></th>
+                </tr>
               </thead>
               <tbody>
                 {nfs.length === 0 && (
@@ -220,7 +225,7 @@ export default function DashboardPage() {
                     <td className="td-right td-mono" style={{color: Number(nf.volume_saldo_kg) <= 0.01 ? 'var(--danger)' : 'var(--accent-2)', fontWeight:600}}>
                       {fmt4(nf.volume_saldo_kg)}
                     </td>
-                    <td><button className="btn btn-ghost btn-sm" onClick={() => navigate(`/nf/${nf.id}`)}>🔍</button></td>
+                    <td className="col-hide-mobile"><button className="btn btn-ghost btn-sm" onClick={() => navigate(`/nf/${nf.id}`)}>🔍</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -237,7 +242,12 @@ export default function DashboardPage() {
           <div className="table-wrap" style={{flex:1}}>
             <table>
               <thead>
-                <tr><th>Romaneio</th><th>Lote POY</th><th>Tipo</th><th className="td-right">Vol. Final</th></tr>
+                <tr>
+                  <th>Romaneio</th>
+                  <th className="col-hide-mobile">Lote POY</th>
+                  <th>Tipo</th>
+                  <th className="td-right">Vol. Final</th>
+                </tr>
               </thead>
               <tbody>
                 {saidas.length === 0 && (
@@ -246,7 +256,7 @@ export default function DashboardPage() {
                 {saidas.slice(0,6).map(s => (
                   <tr key={s.id}>
                     <td className="td-mono">{s.romaneio_microdata}</td>
-                    <td className="td-mono">{s.lote_poy || s.lote_produto || '—'}</td>
+                    <td className="td-mono col-hide-mobile">{s.lote_poy || s.lote_produto || '—'}</td>
                     <td>{tipoBadge(s.tipo_saida)}</td>
                     <td className="td-right td-mono" style={{color:'var(--accent)'}}>{fmt(s.volume_abatido_kg)}</td>
                   </tr>
