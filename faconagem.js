@@ -636,4 +636,3 @@ export function gerarRomaneioPDF(saida, alocacoes, config = {}) {
 }
 
 
-

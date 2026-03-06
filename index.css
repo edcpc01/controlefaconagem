@@ -274,11 +274,14 @@ tr:hover td { background: rgba(34,85,184,0.08); }
 
 /* ── RESPONSIVE ── */
 @media (max-width: 480px) {
-  .main { padding: 16px 12px 60px; }
+  .main { padding: 12px 10px 80px; }
   .page-title { font-size: 20px; }
   .form-grid { grid-template-columns: 1fr; }
-  .stats-grid { grid-template-columns: 1fr 1fr; }
-  .modal { padding: 20px; }
+  .stats-grid { grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+  .stat-card { padding: 12px 10px; }
+  .stat-value { font-size: 18px; }
+  .modal { padding: 16px; margin: 8px; }
+  .header-inner { padding: 0 10px; }
 }
 
 /* ══════════════════════════════════════════════════════
