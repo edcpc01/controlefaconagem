@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { listarNFsEntrada, criarNFEntrada, editarNFEntrada, deletarNFEntrada, extrairDadosNFdoPDF } from '../lib/faconagem'
 import { useAuth } from '../lib/AuthContext'
+import { useUser } from '../lib/UserContext'
 import { format } from 'date-fns'
 
 function Toast({ toasts }) {
@@ -93,6 +94,7 @@ function NFForm({ form, set, onSubmit, onCancel, loading, extracting, onPDFUploa
 // ── Página ────────────────────────────────────────────────────────
 export default function EntradaPage() {
   const { user }   = useAuth()
+  const { unidadeAtiva } = useUser() || {}
   const navigate   = useNavigate()
   const pdfRef     = useRef()
   const [nfs, setNfs]                 = useState([])
@@ -102,7 +104,7 @@ export default function EntradaPage() {
   const [loadingList, setLoadingList] = useState(true)
   const [toasts, setToasts]           = useState([])
   const [confirmDelete, setConfirmDelete] = useState(null)
-  const [editando, setEditando]       = useState(null)  // NF sendo editada
+  const [editando, setEditando]       = useState(null)
   const [editForm, setEditForm]       = useState(EMPTY_FORM)
   const [editLoading, setEditLoading] = useState(false)
 
@@ -114,10 +116,10 @@ export default function EntradaPage() {
 
   const load = () => {
     setLoadingList(true)
-    listarNFsEntrada().then(setNfs).catch(e => toast(e.message, 'error')).finally(() => setLoadingList(false))
+    listarNFsEntrada(unidadeAtiva || '').then(setNfs).catch(e => toast(e.message, 'error')).finally(() => setLoadingList(false))
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [unidadeAtiva])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const setEdit = (k, v) => setEditForm(f => ({ ...f, [k]: v }))
@@ -167,6 +169,7 @@ export default function EntradaPage() {
         lote:            form.lote.trim(),
         volume_kg:       parseFloat(form.volume_kg),
         valor_unitario:  parseFloat(form.valor_unitario),
+        unidade_id:      unidadeAtiva || '',
       }, user)
       toast('NF cadastrada com sucesso!')
       setForm(EMPTY_FORM)
@@ -204,6 +207,7 @@ export default function EntradaPage() {
         lote:            editForm.lote.trim(),
         volume_kg:       parseFloat(editForm.volume_kg),
         valor_unitario:  parseFloat(editForm.valor_unitario),
+        unidade_id:      editando.unidade_id || unidadeAtiva || '',
       }, user)
       toast('NF atualizada!')
       setEditando(null)

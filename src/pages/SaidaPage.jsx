@@ -5,6 +5,7 @@ import {
   calcularVolumeAbatido, gerarRomaneioPDF, exportarExcel, carregarConfig
 } from '../lib/faconagem'
 import { useAuth } from '../lib/AuthContext'
+import { useUser } from '../lib/UserContext'
 import { format } from 'date-fns'
 
 function Toast({ toasts }) {
@@ -13,7 +14,7 @@ function Toast({ toasts }) {
 
 const EMPTY_FORM = {
   romaneio_microdata: '',
-  codigo_produto: '',
+  codigo_material: '',   // renomeado de codigo_produto
   lote_poy: '',
   lote_acabado: '',
   tipo_saida: '',
@@ -202,6 +203,7 @@ function SucessoModal({ ultimaSaida, onClose, onPDF }) {
 // ── Página Principal ──────────────────────────────────────────────────────
 export default function SaidaPage() {
   const { user } = useAuth()
+  const { unidadeAtiva } = useUser() || {}
   const [saidas, setSaidas]         = useState([])
   const [nfs, setNfs]               = useState([])
   const [form, setForm]             = useState(EMPTY_FORM)
@@ -226,30 +228,52 @@ export default function SaidaPage() {
 
   const load = () => {
     setLoadingList(true)
-    Promise.all([listarSaidas(), listarNFsEntrada()])
+    Promise.all([listarSaidas(unidadeAtiva || ''), listarNFsEntrada(unidadeAtiva || '')])
       .then(([s, n]) => { setSaidas(s); setNfs(n) })
       .catch(e => toast(e.message, 'error'))
       .finally(() => setLoadingList(false))
   }
 
-  useEffect(() => { load(); carregarConfig().then(setConfig) }, [])
+  useEffect(() => { load(); carregarConfig().then(setConfig) }, [unidadeAtiva])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   // Cálculos do formulário
-  const volumeLiq       = parseFloat(form.volume_liquido_kg) || 0
-  const temAbatimento   = TIPOS_COM_ABATIMENTO.includes(form.tipo_saida)
-  const volumeAbatido   = calcularVolumeAbatido(volumeLiq, form.tipo_saida)
-  const valorAbatimento = volumeLiq - volumeAbatido
-  const totalSaldo      = nfs.reduce((a, n) => a + Number(n.volume_saldo_kg), 0)
+  const volumeLiq     = parseFloat(form.volume_liquido_kg) || 0
+  const temAbatimento = TIPOS_COM_ABATIMENTO.includes(form.tipo_saida)
+  const volumeAbatido = calcularVolumeAbatido(volumeLiq, form.tipo_saida)
+
+  // Saldo disponível filtrado por código do material + lote POY da unidade ativa
+  const nfsFiltradas = useMemo(() => {
+    return nfs.filter(nf => {
+      if (form.codigo_material && nf.codigo_material !== form.codigo_material) return false
+      if (form.lote_poy) {
+        const loteNF    = String(nf.lote || '').substring(0, 4)
+        const loteSaida = String(form.lote_poy).substring(0, 4)
+        if (loteNF !== loteSaida) return false
+      }
+      return true
+    })
+  }, [nfs, form.codigo_material, form.lote_poy])
+
+  const totalSaldo       = nfsFiltradas.reduce((a, n) => a + Number(n.volume_saldo_kg), 0)
   const saldoInsuficiente = volumeAbatido > totalSaldo + 0.01
 
   const handlePreConfirm = async () => {
-    if (!form.romaneio_microdata || !form.codigo_produto || !form.lote_poy || !form.tipo_saida || !form.volume_liquido_kg) {
+    if (!form.romaneio_microdata || !form.codigo_material || !form.lote_poy || !form.tipo_saida || !form.volume_liquido_kg) {
       toast('Preencha os campos obrigatórios (*).', 'error'); return
     }
-    if (saldoInsuficiente) { toast(`Saldo insuficiente! Disponível: ${fmt(totalSaldo)} kg`, 'error'); return }
-    const { preview } = await previewFIFO(volumeAbatido)
+    if (nfsFiltradas.length === 0) {
+      toast(`Nenhuma NF encontrada para o material "${form.codigo_material}" / lote "${form.lote_poy}" nesta unidade.`, 'error'); return
+    }
+    if (saldoInsuficiente) {
+      toast(`Saldo insuficiente! Disponível para este material/lote: ${fmt(totalSaldo)} kg`, 'error'); return
+    }
+    const { preview } = await previewFIFO(volumeAbatido, {
+      codigoMaterial: form.codigo_material,
+      lotePoy:        form.lote_poy,
+      unidadeId:      unidadeAtiva || '',
+    })
     setConfirmacao({ preview })
   }
 
@@ -258,13 +282,14 @@ export default function SaidaPage() {
     try {
       const resultado = await criarSaida({
         romaneio_microdata: form.romaneio_microdata.trim(),
-        codigo_produto:     form.codigo_produto.trim(),
+        codigo_material:    form.codigo_material.trim(),
         lote_poy:           form.lote_poy.trim(),
         lote_acabado:       form.lote_acabado.trim(),
         tipo_saida:         form.tipo_saida,
         volume_liquido_kg:  volumeLiq,
         volume_bruto_kg:    form.volume_bruto_kg ? parseFloat(form.volume_bruto_kg) : null,
         quantidade:         form.quantidade.trim() || null,
+        unidade_id:         unidadeAtiva || '',
       }, user)
       setConfirmacao(null)
       setUltimaSaida(resultado)
@@ -320,10 +345,7 @@ export default function SaidaPage() {
       <div className="card" style={{marginBottom:24}}>
         <div className="card-title">Registrar Nova Saída</div>
 
-        {/*
-          LINHA 1 — 4 obrigatórios:
-          Romaneio Microdata* | Código do Produto* | Lote POY* | Tipo de Saída*
-        */}
+        {/* LINHA 1 — 4 obrigatórios */}
         <div className="form-grid-4" style={{marginBottom:14}}>
           <div className="form-group">
             <label className="form-label">Romaneio Microdata *</label>
@@ -331,13 +353,13 @@ export default function SaidaPage() {
               value={form.romaneio_microdata} onChange={e => set('romaneio_microdata', e.target.value)} />
           </div>
           <div className="form-group">
-            <label className="form-label">Código do Produto *</label>
+            <label className="form-label">Código do Material *</label>
             <input type="text" className="form-input" placeholder="Ex: 140911"
-              value={form.codigo_produto} onChange={e => set('codigo_produto', e.target.value)} />
+              value={form.codigo_material} onChange={e => set('codigo_material', e.target.value)} />
           </div>
           <div className="form-group">
             <label className="form-label">Lote POY *</label>
-            <input type="text" className="form-input" placeholder="Ex: 53274S"
+            <input type="text" className="form-input" placeholder="Ex: 5327"
               value={form.lote_poy} onChange={e => set('lote_poy', e.target.value)} />
           </div>
           <div className="form-group">
@@ -349,10 +371,7 @@ export default function SaidaPage() {
           </div>
         </div>
 
-        {/*
-          LINHA 2 — 4 opcionais:
-          Volume Líquido (kg)* | Volume Bruto (kg) | Lote Acabado | Quantidade
-        */}
+        {/* LINHA 2 — Volume + opcionais */}
         <div className="form-grid-4">
           <div className="form-group">
             <label className="form-label">Volume Líquido (kg) *</label>
@@ -376,6 +395,25 @@ export default function SaidaPage() {
           </div>
         </div>
 
+        {/* Saldo disponível para material+lote selecionados */}
+        {(form.codigo_material || form.lote_poy) && (
+          <div style={{marginTop:12, padding:'10px 14px', borderRadius:8,
+            background: saldoInsuficiente ? 'rgba(255,80,80,0.08)' : 'rgba(0,195,100,0.07)',
+            border: `1px solid ${saldoInsuficiente ? 'rgba(255,80,80,0.3)' : 'rgba(0,195,100,0.25)'}`,
+            display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:8
+          }}>
+            <span style={{fontSize:12, color:'var(--text-dim)'}}>
+              Saldo disponível{form.codigo_material ? ` — Mat. ${form.codigo_material}` : ''}{form.lote_poy ? ` / Lote ${form.lote_poy}` : ''}
+              {' '}({nfsFiltradas.length} NF{nfsFiltradas.length !== 1 ? 's' : ''})
+            </span>
+            <span style={{fontWeight:700, fontSize:14,
+              color: saldoInsuficiente ? 'var(--danger)' : 'var(--accent-2)'}}>
+              {fmt(totalSaldo)} kg
+              {saldoInsuficiente && volumeAbatido > 0 && ` — faltam ${fmt(volumeAbatido - totalSaldo)} kg`}
+            </span>
+          </div>
+        )}
+
         {/* Preview de abatimento */}
         {volumeLiq > 0 && form.tipo_saida && (
           <div className="abatimento-box" style={{marginTop:16}}>
@@ -391,7 +429,7 @@ export default function SaidaPage() {
                     {TIPOS_SAIDA.find(t => t.value === form.tipo_saida)?.label}
                   </span>
                 </span>
-                <span className="abatimento-value" style={{color:'var(--warn)'}}>− {fmt(valorAbatimento)} kg</span>
+                <span className="abatimento-value" style={{color:'var(--warn)'}}>− {fmt(volumeLiq - volumeAbatido)} kg</span>
               </div>
             )}
             <div style={{borderTop:'1px solid var(--border)', paddingTop:8, marginTop:4}}>

@@ -97,9 +97,12 @@ export async function carregarConfig() {
 // NF ENTRADA — CRUD + EDIÇÃO
 // ─────────────────────────────────────────────────────────────────
 
-export async function listarNFsEntrada() {
+export async function listarNFsEntrada(unidadeId = '') {
   const snap = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
-  return snap.docs.map(docToObj)
+  const todos = snap.docs.map(docToObj)
+  // Filtra por unidade se informada; docs sem unidade_id pertencem à raiz (sem unidade)
+  if (!unidadeId) return todos
+  return todos.filter(nf => (nf.unidade_id || '') === unidadeId)
 }
 
 export async function criarNFEntrada(payload, usuario) {
@@ -112,6 +115,7 @@ export async function criarNFEntrada(payload, usuario) {
     volume_kg:       payload.volume_kg,
     volume_saldo_kg: payload.volume_kg,
     valor_unitario:  payload.valor_unitario,
+    unidade_id:      payload.unidade_id || '',
     criado_em:       now,
     atualizado_em:   now,
   })
@@ -137,6 +141,7 @@ export async function editarNFEntrada(id, payload, usuario) {
     volume_kg:       payload.volume_kg,
     volume_saldo_kg: novoSaldo,
     valor_unitario:  payload.valor_unitario,
+    unidade_id:      payload.unidade_id || '',
     atualizado_em:   now,
   })
   await registrarLog('NF_ENTRADA_EDITADA', `NF ${payload.numero_nf} atualizada`, usuario)
@@ -209,16 +214,37 @@ export async function extrairDadosNFdoPDF(base64Data) {
     const err = await response.json().catch(() => ({}))
     throw new Error(err.error || `Erro ${response.status} ao extrair NF.`)
   }
-  return await response.json()
+  const dados = await response.json()
+
+  // Normaliza lote: usa apenas os 4 primeiros dígitos (ex: "53274S" → "5327")
+  if (dados.lote) {
+    dados.lote = String(dados.lote).replace(/\D/g, '').substring(0, 4)
+  }
+
+  return dados
 }
 
 // ─────────────────────────────────────────────────────────────────
 // PREVIEW FIFO (sem gravar — usado para confirmação)
 // ─────────────────────────────────────────────────────────────────
 
-export async function previewFIFO(volumeAbatido) {
+export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unidadeId = '' } = {}) {
   const snap = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
-  const nfsComSaldo = snap.docs.map(docToObj).filter(nf => Number(nf.volume_saldo_kg) > 0.001)
+  const nfsComSaldo = snap.docs.map(docToObj).filter(nf => {
+    if (Number(nf.volume_saldo_kg) <= 0.001) return false
+    // Filtra por unidade
+    if (unidadeId && (nf.unidade_id || '') !== unidadeId) return false
+    // Filtra por código do material
+    if (codigoMaterial && nf.codigo_material !== codigoMaterial) return false
+    // Filtra por lote POY (compara os 4 primeiros dígitos)
+    if (lotePoy) {
+      const loteNF   = String(nf.lote || '').substring(0, 4)
+      const loteSaida = String(lotePoy).substring(0, 4)
+      if (loteNF !== loteSaida) return false
+    }
+    return true
+  })
+
   let restante = volumeAbatido
   const preview = []
   for (const nf of nfsComSaldo) {
@@ -236,17 +262,27 @@ export async function previewFIFO(volumeAbatido) {
 
 export async function criarSaida(payload, usuario) {
   const {
-    romaneio_microdata, codigo_produto, lote_poy, lote_acabado,
-    tipo_saida, volume_liquido_kg, volume_bruto_kg, quantidade
+    romaneio_microdata, codigo_material, lote_poy, lote_acabado,
+    tipo_saida, volume_liquido_kg, volume_bruto_kg, quantidade,
+    unidade_id = ''
   } = payload
 
-  const temAbatimento     = TIPOS_COM_ABATIMENTO.includes(tipo_saida)
-  // O volume que será debitado do estoque = volume líquido com abatimento aplicado
-  const volume_abatido_kg = calcularVolumeAbatido(volume_liquido_kg, tipo_saida)
+  const temAbatimento       = TIPOS_COM_ABATIMENTO.includes(tipo_saida)
+  const volume_abatido_kg   = calcularVolumeAbatido(volume_liquido_kg, tipo_saida)
   const percentual_abatimento = temAbatimento ? PERCENTUAL_ABATIMENTO : 0
 
   const snap = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
-  const nfsComSaldo = snap.docs.map(docToObj).filter(nf => Number(nf.volume_saldo_kg) > 0.001)
+  const nfsComSaldo = snap.docs.map(docToObj).filter(nf => {
+    if (Number(nf.volume_saldo_kg) <= 0.001) return false
+    if (unidade_id && (nf.unidade_id || '') !== unidade_id) return false
+    if (codigo_material && nf.codigo_material !== codigo_material) return false
+    if (lote_poy) {
+      const loteNF    = String(nf.lote || '').substring(0, 4)
+      const loteSaida = String(lote_poy).substring(0, 4)
+      if (loteNF !== loteSaida) return false
+    }
+    return true
+  })
 
   let volumeRestante = volume_abatido_kg
   const alocacoes = []
@@ -257,8 +293,13 @@ export async function criarSaida(payload, usuario) {
     volumeRestante -= alocar
   }
 
-  if (volumeRestante > 0.01)
-    throw new Error(`Saldo insuficiente. Faltam ${volumeRestante.toFixed(4)} kg.`)
+  if (volumeRestante > 0.01) {
+    const saldoDisp = nfsComSaldo.reduce((a, n) => a + Number(n.volume_saldo_kg), 0)
+    if (saldoDisp <= 0) {
+      throw new Error(`Não há NFs com saldo para o material "${codigo_material}" / lote "${lote_poy}" nesta unidade.`)
+    }
+    throw new Error(`Saldo insuficiente. Disponível: ${saldoDisp.toFixed(4)} kg — Solicitado: ${volume_abatido_kg.toFixed(4)} kg.`)
+  }
 
   const now      = Timestamp.now()
   const batch    = writeBatch(db)
@@ -266,15 +307,17 @@ export async function criarSaida(payload, usuario) {
 
   batch.set(saidaRef, {
     romaneio_microdata,
-    codigo_produto,
+    codigo_material,            // campo padronizado (era codigo_produto)
+    codigo_produto: codigo_material, // mantém retrocompatibilidade
     lote_poy,
-    lote_acabado:    lote_acabado || '',
+    lote_acabado:   lote_acabado || '',
     tipo_saida,
     volume_liquido_kg,
     volume_bruto_kg:  volume_bruto_kg || null,
     quantidade:       quantidade || null,
     volume_abatido_kg,
     percentual_abatimento,
+    unidade_id,
     usuario_email: usuario?.email || '',
     criado_em: now,
   })
@@ -300,22 +343,22 @@ export async function criarSaida(payload, usuario) {
   await batch.commit()
   await registrarLog(
     'SAIDA_REGISTRADA',
-    `Romaneio ${romaneio_microdata} — ${volume_abatido_kg.toFixed(4)} kg (${TIPOS_SAIDA.find(t=>t.value===tipo_saida)?.label})`,
+    `Romaneio ${romaneio_microdata} — ${volume_abatido_kg.toFixed(4)} kg (${TIPOS_SAIDA.find(t=>t.value===tipo_saida)?.label}) | ${codigo_material} / Lote ${lote_poy}`,
     usuario
   )
 
   return {
     saida: {
-      id: saidaRef.id, romaneio_microdata, codigo_produto, lote_poy, lote_acabado,
+      id: saidaRef.id, romaneio_microdata, codigo_material, lote_poy, lote_acabado,
       tipo_saida, volume_liquido_kg, volume_bruto_kg, quantidade,
-      volume_abatido_kg, percentual_abatimento,
+      volume_abatido_kg, percentual_abatimento, unidade_id,
       criado_em: now.toDate().toISOString()
     },
     alocacoes: alocacoesRetorno,
   }
 }
 
-export async function listarSaidas() {
+export async function listarSaidas(unidadeId = '') {
   const [saidasSnap, alocSnap] = await Promise.all([
     getDocs(query(collection(db, 'saida'), orderBy('criado_em', 'desc'))),
     getDocs(collection(db, 'alocacao_saida')),
@@ -326,10 +369,17 @@ export async function listarSaidas() {
     if (!alocPorSaida[data.saida_id]) alocPorSaida[data.saida_id] = []
     alocPorSaida[data.saida_id].push({ id: d.id, ...data })
   })
-  return saidasSnap.docs.map(d => {
+  const todas = saidasSnap.docs.map(d => {
     const data = d.data()
-    return { id: d.id, ...data, criado_em: tsToDateTime(d.data().criado_em), alocacao_saida: alocPorSaida[d.id] || [] }
+    return {
+      id: d.id, ...data,
+      codigo_material: data.codigo_material || data.codigo_produto || '',
+      criado_em: tsToDateTime(d.data().criado_em),
+      alocacao_saida: alocPorSaida[d.id] || []
+    }
   })
+  if (!unidadeId) return todas
+  return todas.filter(s => (s.unidade_id || '') === unidadeId)
 }
 
 // ─────────────────────────────────────────────────────────────────

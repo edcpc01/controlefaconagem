@@ -1,5 +1,17 @@
 export const config = { maxDuration: 30 }
 
+function extrairTextoPDFBuffer(buffer) {
+  const str = buffer.toString('latin1')
+  const matches = []
+  const re1 = /\(([^\)\\]{2,})\)/g
+  let m
+  while ((m = re1.exec(str)) !== null) {
+    const s = m[1].replace(/\\n/g, ' ').replace(/\\/g, '').trim()
+    if (s.length > 1) matches.push(s)
+  }
+  return matches.join(' ')
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
@@ -8,15 +20,46 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
   const apiKey = process.env.OPENROUTER_API_KEY
-  if (!apiKey) {
-    return res.status(500).json({ error: 'OPENROUTER_API_KEY não configurada na Vercel.' })
+  if (!apiKey) return res.status(500).json({ error: 'OPENROUTER_API_KEY não configurada na Vercel.' })
+
+  // Aceita: { base64Data } ou { pdfText }
+  const { base64Data, pdfText: pdfTextDireto } = req.body
+
+  if (!base64Data && !pdfTextDireto) {
+    return res.status(400).json({ error: 'Envie base64Data ou pdfText.' })
   }
 
-  const { pdfText, base64Data } = req.body || {}
-  const textoNF = (pdfText || base64Data || '').trim()
+  let textoNF = pdfTextDireto || ''
 
+  // Se veio base64, extrai o texto no servidor
+  if (base64Data && !textoNF) {
+    try {
+      const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs').catch(() => null)
+      if (pdfjsLib) {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = ''
+        const buf = Buffer.from(base64Data, 'base64')
+        const pdf = await pdfjsLib.getDocument({
+          data: new Uint8Array(buf),
+          useWorkerFetch: false,
+          isEvalSupported: false,
+          useSystemFonts: true,
+        }).promise
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i)
+          const content = await page.getTextContent()
+          textoNF += content.items.map(it => it.str).join(' ') + '\n'
+        }
+      } else {
+        textoNF = extrairTextoPDFBuffer(Buffer.from(base64Data, 'base64'))
+      }
+    } catch (e) {
+      textoNF = extrairTextoPDFBuffer(Buffer.from(base64Data, 'base64'))
+    }
+  }
+
+  textoNF = textoNF.trim()
   if (!textoNF || textoNF.length < 10) {
-    return res.status(400).json({ error: 'Texto do PDF não recebido ou muito curto.' })
+    return res.status(422).json({ error: 'Não foi possível extrair texto do PDF.' })
   }
 
   try {
@@ -39,7 +82,7 @@ export default async function handler(req, res) {
           },
           {
             role: 'user',
-            content: `Extraia os dados desta Nota Fiscal e retorne SOMENTE este JSON preenchido:\n{\n  "numero_nf": "número sem zeros à esquerda, ex: 99733",\n  "data_emissao": "formato YYYY-MM-DD",\n  "codigo_material": "código do produto, ex: 140911",\n  "lote": "lote POY, ex: 53274S",\n  "volume_kg": 0.000,\n  "valor_unitario": 0.000000\n}\n\nTEXTO DA NOTA FISCAL:\n${textoNF.slice(0, 4000)}`
+            content: `Extraia os dados desta Nota Fiscal e retorne SOMENTE este JSON:\n{\n  "numero_nf": "número sem zeros à esquerda",\n  "data_emissao": "YYYY-MM-DD",\n  "codigo_material": "código do produto",\n  "lote": "lote POY",\n  "volume_kg": 0,\n  "valor_unitario": 0\n}\n\nNOTA FISCAL:\n${textoNF.slice(0, 4000)}`
           }
         ]
       })
@@ -65,6 +108,6 @@ export default async function handler(req, res) {
 
     return res.status(200).json(parsed)
   } catch (e) {
-    return res.status(500).json({ error: e.message || 'Erro interno.' })
+    return res.status(500).json({ error: e.message })
   }
 }

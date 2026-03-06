@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { listarNFsEntrada, listarSaidas, TIPOS_SAIDA } from '../lib/faconagem'
+import { useUser } from '../lib/UserContext'
 import { format } from 'date-fns'
 
 const fmt  = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -132,16 +133,18 @@ function LoteCardSaida({ grupo }) {
 
 export default function DashboardPage() {
   const navigate = useNavigate()
+  const { unidadeAtiva } = useUser() || {}
   const [nfs,     setNfs]     = useState([])
   const [saidas,  setSaidas]  = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([listarNFsEntrada(), listarSaidas()])
+    setLoading(true)
+    Promise.all([listarNFsEntrada(unidadeAtiva || ''), listarSaidas(unidadeAtiva || '')])
       .then(([n,s]) => { setNfs(n); setSaidas(s) })
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [])
+  }, [unidadeAtiva])
 
   const totalEntrada = nfs.reduce((a,n) => a + Number(n.volume_kg), 0)
   const totalSaldo   = nfs.reduce((a,n) => a + Number(n.volume_saldo_kg), 0)
