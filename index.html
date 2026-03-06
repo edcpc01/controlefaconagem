@@ -1,92 +1,90 @@
-import { useEffect, useState } from 'react'
-import { listarLogs } from '../lib/faconagem'
-import { format } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
+import { useState } from 'react'
+import { useAuth } from '../lib/AuthContext'
 
-const ACAO_CONFIG = {
-  NF_ENTRADA_CRIADA:   { icon: '↓', color: 'var(--accent-2)', label: 'NF Entrada' },
-  NF_ENTRADA_REMOVIDA: { icon: '✕', color: 'var(--danger)',   label: 'NF Removida' },
-  SAIDA_REGISTRADA:    { icon: '↑', color: 'var(--accent)',   label: 'Saída' },
-}
+export default function LoginPage() {
+  const { loginGoogle, loginEmail, cadastrarEmail, error, setError } = useAuth()
+  const [mode, setMode]     = useState('login') // login | cadastro
+  const [email, setEmail]   = useState('')
+  const [senha, setSenha]   = useState('')
+  const [nome, setNome]     = useState('')
+  const [loading, setLoading] = useState(false)
 
-export default function LogPage() {
-  const [logs, setLogs]       = useState([])
-  const [loading, setLoading] = useState(true)
-  const [busca, setBusca]     = useState('')
+  const handleEmail = async () => {
+    if (!email || !senha) return
+    setLoading(true)
+    if (mode === 'login') await loginEmail(email, senha)
+    else await cadastrarEmail(email, senha, nome)
+    setLoading(false)
+  }
 
-  useEffect(() => {
-    listarLogs().then(setLogs).finally(() => setLoading(false))
-  }, [])
+  const handleGoogle = async () => {
+    setLoading(true)
+    await loginGoogle()
+    setLoading(false)
+  }
 
-  const filtered = logs.filter(l =>
-    !busca ||
-    l.descricao?.toLowerCase().includes(busca.toLowerCase()) ||
-    l.usuario_email?.toLowerCase().includes(busca.toLowerCase()) ||
-    l.usuario_nome?.toLowerCase().includes(busca.toLowerCase())
-  )
-
-  const fmtDT = d => { try { return format(new Date(d), "dd/MM/yyyy HH:mm:ss", { locale: ptBR }) } catch { return '—' } }
+  const switchMode = () => { setError(null); setMode(m => m === 'login' ? 'cadastro' : 'login') }
 
   return (
-    <div>
-      <div className="page-header">
-        <div className="page-title">Histórico de <span>Ações</span></div>
-        <div className="page-sub">Log completo de todas as operações realizadas no sistema</div>
-      </div>
-
-      <div className="card">
-        <div style={{display:'flex', alignItems:'center', gap:12, marginBottom:20, flexWrap:'wrap'}}>
-          <div className="card-title" style={{margin:0, flex:1}}>Registro de Atividades</div>
-          <input
-            className="form-input"
-            style={{maxWidth:280}}
-            placeholder="Buscar por descrição ou usuário..."
-            value={busca}
-            onChange={e => setBusca(e.target.value)}
-          />
+    <div className="login-page">
+      <div className="login-bg" />
+      <div className="login-card">
+        {/* Brand */}
+        <div className="login-brand">
+          <div className="login-brand-icon">⬡</div>
+          <div className="login-brand-title">Façonagem</div>
+          <div className="login-brand-sub">Rhodia Santo André</div>
         </div>
 
-        {loading ? (
-          <div className="loading"><div className="spinner"></div></div>
-        ) : filtered.length === 0 ? (
-          <div className="empty">
-            <div className="empty-icon">📋</div>
-            <div className="empty-text">{busca ? 'Nenhum resultado encontrado.' : 'Nenhuma ação registrada ainda.'}</div>
-          </div>
-        ) : (
-          <div className="log-timeline">
-            {filtered.map((log, i) => {
-              const cfg = ACAO_CONFIG[log.acao] || { icon: '•', color: 'var(--text-dim)', label: log.acao }
-              return (
-                <div key={log.id} className="log-item">
-                  <div className="log-dot" style={{background: cfg.color, boxShadow: `0 0 8px ${cfg.color}55`}}>
-                    <span style={{fontSize:11}}>{cfg.icon}</span>
-                  </div>
-                  {i < filtered.length - 1 && <div className="log-line" />}
-                  <div className="log-content">
-                    <div className="log-header">
-                      <span className="log-badge" style={{background: `${cfg.color}20`, color: cfg.color, border: `1px solid ${cfg.color}40`}}>
-                        {cfg.label}
-                      </span>
-                      <span className="log-time">{fmtDT(log.criado_em)}</span>
-                    </div>
-                    <div className="log-desc">{log.descricao}</div>
-                    <div className="log-user">
-                      <span className="log-user-icon">👤</span>
-                      {log.usuario_nome || log.usuario_email}
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
+        <div className="login-divider" />
+
+        <div className="login-form-title">
+          {mode === 'login' ? 'Entrar na conta' : 'Criar conta'}
+        </div>
+
+        {/* Google */}
+        <button className="btn-google" onClick={handleGoogle} disabled={loading}>
+          <svg width="18" height="18" viewBox="0 0 48 48">
+            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+          </svg>
+          Continuar com Google
+        </button>
+
+        <div className="login-or"><span>ou</span></div>
+
+        {/* Formulário */}
+        {mode === 'cadastro' && (
+          <div className="form-group" style={{marginBottom:12}}>
+            <label className="form-label">Nome</label>
+            <input className="form-input" type="text" placeholder="Seu nome" value={nome} onChange={e => setNome(e.target.value)} />
           </div>
         )}
 
-        {!loading && filtered.length > 0 && (
-          <div style={{marginTop:16, padding:'8px 0', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--text-dim)'}}>
-            {filtered.length} registro{filtered.length !== 1 ? 's' : ''} encontrado{filtered.length !== 1 ? 's' : ''}
-          </div>
-        )}
+        <div className="form-group" style={{marginBottom:12}}>
+          <label className="form-label">E-mail</label>
+          <input className="form-input" type="email" placeholder="seu@email.com" value={email} onChange={e => setEmail(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleEmail()} />
+        </div>
+
+        <div className="form-group" style={{marginBottom:16}}>
+          <label className="form-label">Senha</label>
+          <input className="form-input" type="password" placeholder="••••••••" value={senha} onChange={e => setSenha(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleEmail()} />
+        </div>
+
+        {error && <div className="login-error">{error}</div>}
+
+        <button className="btn btn-primary" style={{width:'100%', padding:'12px'}} onClick={handleEmail} disabled={loading || !email || !senha}>
+          {loading ? 'Aguarde...' : mode === 'login' ? 'Entrar' : 'Criar conta'}
+        </button>
+
+        <div className="login-switch">
+          {mode === 'login' ? 'Não tem conta?' : 'Já tem conta?'}
+          <button onClick={switchMode}>{mode === 'login' ? 'Cadastre-se' : 'Entrar'}</button>
+        </div>
       </div>
     </div>
   )

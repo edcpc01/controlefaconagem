@@ -1,282 +1,346 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { listarNFsEntrada, listarSaidas, TIPOS_SAIDA } from '../lib/faconagem'
+import { listarNFsEntrada, criarNFEntrada, editarNFEntrada, deletarNFEntrada, extrairDadosNFdoPDF, verificarNFDuplicada } from '../lib/faconagem'
+import { useAuth } from '../lib/AuthContext'
 import { useUser } from '../lib/UserContext'
 import { format } from 'date-fns'
 
-const fmt  = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const fmt4 = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
-
-function tipoBadge(tipo) {
-  const map = { faturamento:'badge-blue', sucata:'badge-danger', estopa:'badge-warn', dev_qualidade:'badge-green', dev_processo:'badge-green', dev_final_campanha:'badge-green' }
-  const label = TIPOS_SAIDA.find(t => t.value === tipo)?.label || tipo
-  return <span className={`badge ${map[tipo] || 'badge-blue'}`}>{label}</span>
+function Toast({ toasts }) {
+  return <div className="toast-container">{toasts.map(t => <div key={t.id} className={`toast ${t.type}`}>{t.msg}</div>)}</div>
 }
 
-function agruparPorLote(nfs) {
-  const mapa = {}
-  for (const nf of nfs) {
-    const key = nf.lote || '(sem lote)'
-    if (!mapa[key]) mapa[key] = { lote: key, nfs: [], totalKg: 0, saldoKg: 0 }
-    mapa[key].nfs.push(nf)
-    mapa[key].totalKg += Number(nf.volume_kg)
-    mapa[key].saldoKg += Number(nf.volume_saldo_kg)
-  }
-  return Object.values(mapa).sort((a, b) => b.totalKg - a.totalKg)
-}
+const EMPTY_FORM = { data_emissao: '', numero_nf: '', codigo_material: '', lote: '', volume_kg: '', valor_unitario: '' }
 
-function agruparSaidasPorLote(saidas) {
-  const mapa = {}
-  for (const s of saidas) {
-    const key = s.lote_poy || s.lote_produto || '(sem lote)'
-    if (!mapa[key]) mapa[key] = { lote: key, saidas: [], totalLiq: 0, totalFinal: 0 }
-    mapa[key].saidas.push(s)
-    mapa[key].totalLiq   += Number(s.volume_liquido_kg || s.volume_bruto_kg || 0)
-    mapa[key].totalFinal += Number(s.volume_abatido_kg || 0)
-  }
-  return Object.values(mapa).sort((a, b) => b.totalFinal - a.totalFinal)
-}
+const fmt        = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
+const fmtCurrency = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 6 })
 
-function LoteCardEntrada({ grupo, navigate }) {
-  const [open, setOpen] = useState(false)
-  const pct = grupo.totalKg > 0 ? (grupo.saldoKg / grupo.totalKg) * 100 : 0
+// ── Formulário reutilizável (criar + editar) ──────────────────────
+function NFForm({ form, set, onSubmit, onCancel, loading, extracting, onPDFUpload, pdfInputRef, isEdit }) {
   return (
-    <div className="lote-card">
-      <div className="lote-card-header" onClick={() => setOpen(o => !o)}>
-        <div>
-          <div className="lote-card-title">Lote <span style={{color:'var(--accent)'}}>{grupo.lote}</span></div>
-          <div className="lote-card-sub">{grupo.nfs.length} NF{grupo.nfs.length !== 1 ? 's' : ''}</div>
+    <div>
+      {/* Upload PDF */}
+      {!isEdit && (
+        <div
+          className="pdf-dropzone"
+          onClick={() => pdfInputRef.current?.click()}
+          onDragOver={e => { e.preventDefault(); e.currentTarget.classList.add('drag-over') }}
+          onDragLeave={e => e.currentTarget.classList.remove('drag-over')}
+          onDrop={e => { e.preventDefault(); e.currentTarget.classList.remove('drag-over'); const f = e.dataTransfer.files[0]; if (f) onPDFUpload(f) }}
+        >
+          <input ref={pdfInputRef} type="file" accept="application/pdf" style={{display:'none'}} onChange={e => e.target.files[0] && onPDFUpload(e.target.files[0])} />
+          {extracting ? (
+            <div style={{display:'flex', alignItems:'center', gap:10}}>
+              <div className="spinner" style={{width:20, height:20, marginBottom:0}} />
+              <span style={{color:'var(--accent)', fontSize:13}}>Extraindo dados da NF...</span>
+            </div>
+          ) : (
+            <div style={{textAlign:'center'}}>
+              <div style={{fontSize:28, marginBottom:4}}>📄</div>
+              <div style={{fontSize:13, color:'var(--text)', fontWeight:600}}>Importar PDF da NF</div>
+              <div style={{fontSize:11, color:'var(--text-dim)', marginTop:2}}>Clique ou arraste o arquivo PDF para preencher automaticamente</div>
+            </div>
+          )}
         </div>
-        <div style={{textAlign:'right'}}>
-          <div className="lote-card-kg" style={{color: pct < 10 ? 'var(--danger)' : 'var(--accent-2)'}}>
-            {fmt4(grupo.saldoKg)} kg
+      )}
+
+      <div className="form-grid" style={{marginTop: isEdit ? 0 : 16}}>
+        <div className="form-group">
+          <label className="form-label">Data de Emissão *</label>
+          <input type="date" className="form-input" value={form.data_emissao} onChange={e => set('data_emissao', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Número da NF *</label>
+          <input type="text" className="form-input" placeholder="Ex: 99733" value={form.numero_nf} onChange={e => set('numero_nf', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Código do Material *</label>
+          <input type="text" className="form-input" placeholder="Ex: 140911" value={form.codigo_material} onChange={e => set('codigo_material', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Lote POY *</label>
+          <input type="text" className="form-input" placeholder="Ex: 53274S" value={form.lote} onChange={e => set('lote', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Volume (kg) *</label>
+          <input type="number" step="0.001" min="0" className="form-input" placeholder="0,000" value={form.volume_kg} onChange={e => set('volume_kg', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Valor Unitário (R$) *</label>
+          <input type="number" step="0.000001" min="0" className="form-input" placeholder="0,000000" value={form.valor_unitario} onChange={e => set('valor_unitario', e.target.value)} />
+        </div>
+      </div>
+
+      {form.volume_kg && form.valor_unitario && (
+        <div className="abatimento-box" style={{marginTop:16}}>
+          <div className="abatimento-row">
+            <span className="abatimento-label">Valor Total da NF</span>
+            <span className="abatimento-value highlight">
+              R$ {(parseFloat(form.volume_kg || 0) * parseFloat(form.valor_unitario || 0)).toLocaleString('pt-BR', {minimumFractionDigits:2})}
+            </span>
           </div>
-          <div style={{fontSize:11, color:'var(--text-dim)'}}>saldo de {fmt(grupo.totalKg)} kg</div>
-        </div>
-      </div>
-      <div className="progress-bar-bg" style={{margin:'10px 0 4px'}}>
-        <div className="progress-bar-fill" style={{
-          width:`${Math.min(100-pct,100)}%`,
-          background: pct < 10 ? 'var(--danger)' : pct < 30 ? 'var(--warn)' : 'linear-gradient(90deg,var(--accent),var(--accent-2))'
-        }}/>
-      </div>
-      <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--text-dim)',marginBottom: open ? 10 : 0}}>
-        <span>{(100-pct).toFixed(1)}% consumido</span>
-        <span>{pct.toFixed(1)}% disponível</span>
-      </div>
-      {open && (
-        <div className="lote-nf-list">
-          {grupo.nfs.map(nf => (
-            <div key={nf.id} className="lote-nf-row">
-              <div>
-                <span className="td-mono" style={{fontWeight:600,fontSize:13}}>NF {nf.numero_nf}</span>
-                <span style={{fontSize:11,color:'var(--text-dim)',marginLeft:8}}>
-                  {nf.data_emissao ? format(new Date(nf.data_emissao),'dd/MM/yyyy') : ''}
-                </span>
-              </div>
-              <div style={{display:'flex',alignItems:'center',gap:10}}>
-                <span className="td-mono" style={{fontSize:13,color:Number(nf.volume_saldo_kg)<=0.01?'var(--danger)':'var(--accent-2)',fontWeight:600}}>
-                  {fmt4(nf.volume_saldo_kg)} kg
-                </span>
-                <button className="btn btn-ghost btn-sm" onClick={()=>navigate(`/nf/${nf.id}`)}>🔍</button>
-              </div>
-            </div>
-          ))}
         </div>
       )}
-      <button className="lote-expand-btn" onClick={()=>setOpen(o=>!o)}>
-        {open ? '▲ Recolher' : `▼ Ver ${grupo.nfs.length} NF${grupo.nfs.length!==1?'s':''}`}
-      </button>
+
+      <div style={{display:'flex', justifyContent:'flex-end', gap:10, marginTop:20}}>
+        {onCancel && <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>}
+        <button className="btn btn-primary" onClick={onSubmit} disabled={loading}>
+          {loading ? 'Salvando...' : isEdit ? '✓ Salvar Alterações' : '+ Cadastrar NF'}
+        </button>
+      </div>
     </div>
   )
 }
 
-function LoteCardSaida({ grupo }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="lote-card">
-      <div className="lote-card-header" onClick={()=>setOpen(o=>!o)}>
-        <div>
-          <div className="lote-card-title">Lote <span style={{color:'var(--accent)'}}>{grupo.lote}</span></div>
-          <div className="lote-card-sub">{grupo.saidas.length} saída{grupo.saidas.length!==1?'s':''}</div>
-        </div>
-        <div style={{textAlign:'right'}}>
-          <div className="lote-card-kg" style={{color:'var(--accent)'}}>{fmt4(grupo.totalFinal)} kg</div>
-          <div style={{fontSize:11,color:'var(--text-dim)'}}>total debitado</div>
-        </div>
-      </div>
-      <div style={{display:'flex',gap:16,margin:'8px 0 4px',flexWrap:'wrap',fontSize:12}}>
-        <span><span style={{color:'var(--text-dim)'}}>Líq.: </span><span className="td-mono">{fmt4(grupo.totalLiq)} kg</span></span>
-        <span><span style={{color:'var(--text-dim)'}}>Romaneios: </span><span className="td-mono">{grupo.saidas.length}</span></span>
-      </div>
-      {open && (
-        <div className="lote-nf-list">
-          {grupo.saidas.map(s => (
-            <div key={s.id} className="lote-nf-row">
-              <div>
-                <span className="td-mono" style={{fontWeight:600,fontSize:13}}>{s.romaneio_microdata}</span>
-                <span style={{marginLeft:8}}>{tipoBadge(s.tipo_saida)}</span>
-              </div>
-              <span className="td-mono" style={{fontSize:13,color:'var(--accent)',fontWeight:600}}>
-                {fmt4(s.volume_abatido_kg)} kg
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-      <button className="lote-expand-btn" onClick={()=>setOpen(o=>!o)}>
-        {open ? '▲ Recolher' : `▼ Ver ${grupo.saidas.length} romaneio${grupo.saidas.length!==1?'s':''}`}
-      </button>
-    </div>
-  )
-}
-
-export default function DashboardPage() {
-  const navigate = useNavigate()
+// ── Página ────────────────────────────────────────────────────────
+export default function EntradaPage() {
+  const { user }   = useAuth()
   const { unidadeAtiva } = useUser() || {}
-  const [nfs,     setNfs]     = useState([])
-  const [saidas,  setSaidas]  = useState([])
-  const [loading, setLoading] = useState(true)
+  const navigate   = useNavigate()
+  const pdfRef     = useRef()
+  const [nfs, setNfs]                 = useState([])
+  const [form, setForm]               = useState(EMPTY_FORM)
+  const [loading, setLoading]         = useState(false)
+  const [extracting, setExtracting]   = useState(false)
+  const [loadingList, setLoadingList] = useState(true)
+  const [toasts, setToasts]           = useState([])
+  const [confirmDelete, setConfirmDelete] = useState(null)
+  const [editando, setEditando]       = useState(null)
+  const [editForm, setEditForm]       = useState(EMPTY_FORM)
+  const [editLoading, setEditLoading] = useState(false)
 
-  useEffect(() => {
+  const toast = (msg, type = 'success') => {
+    const id = Date.now()
+    setToasts(t => [...t, { id, msg, type }])
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 3500)
+  }
+
+  const load = () => {
+    setLoadingList(true)
+    listarNFsEntrada(unidadeAtiva || '').then(setNfs).catch(e => toast(e.message, 'error')).finally(() => setLoadingList(false))
+  }
+
+  useEffect(() => { load() }, [unidadeAtiva])
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const setEdit = (k, v) => setEditForm(f => ({ ...f, [k]: v }))
+
+  // ── PDF Upload + Extração ──
+  const handlePDFUpload = async (file) => {
+    setExtracting(true)
+    try {
+      const base64 = await new Promise((res, rej) => {
+        const r = new FileReader()
+        r.onload = () => res(r.result.split(',')[1])
+        r.onerror = () => rej(new Error('Erro ao ler arquivo'))
+        r.readAsDataURL(file)
+      })
+      const dados = await extrairDadosNFdoPDF(base64)
+      setForm({
+        data_emissao:    dados.data_emissao   || '',
+        numero_nf:       dados.numero_nf      || '',
+        codigo_material: dados.codigo_material || '',
+        lote:            dados.lote           || '',
+        volume_kg:       dados.volume_kg      != null ? String(dados.volume_kg) : '',
+        valor_unitario:  dados.valor_unitario != null ? String(dados.valor_unitario) : '',
+      })
+      toast('Dados extraídos com sucesso! Confira os campos.')
+    } catch (e) {
+      const msg = e.message?.includes('ANTHROPIC_API_KEY')
+        ? '⚠ Chave da API não configurada na Vercel. Consulte o README.'
+        : 'Erro ao extrair dados do PDF. Preencha manualmente.'
+      toast(msg, 'error')
+    } finally {
+      setExtracting(false)
+      if (pdfRef.current) pdfRef.current.value = ''
+    }
+  }
+
+  // ── Criar NF ──
+  const handleSubmit = async () => {
+    if (!form.data_emissao || !form.numero_nf || !form.codigo_material || !form.lote || !form.volume_kg || !form.valor_unitario) {
+      toast('Preencha todos os campos obrigatórios.', 'error'); return
+    }
     setLoading(true)
-    Promise.all([listarNFsEntrada(unidadeAtiva || ''), listarSaidas(unidadeAtiva || '')])
-      .then(([n,s]) => { setNfs(n); setSaidas(s) })
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, [unidadeAtiva])
+    try {
+      // Trava duplicata — verifica em TODAS as unidades
+      const duplicata = await verificarNFDuplicada(form.numero_nf.trim())
+      if (duplicata) {
+        toast(`NF ${form.numero_nf} já está cadastrada no sistema. Números de NF são únicos em todas as unidades.`, 'error')
+        setLoading(false); return
+      }
+      await criarNFEntrada({
+        data_emissao:    form.data_emissao,
+        numero_nf:       form.numero_nf.trim(),
+        codigo_material: form.codigo_material.trim(),
+        lote:            form.lote.trim(),
+        volume_kg:       parseFloat(form.volume_kg),
+        valor_unitario:  parseFloat(form.valor_unitario),
+        unidade_id:      unidadeAtiva || '',
+      }, user)
+      toast('NF cadastrada com sucesso!')
+      setForm(EMPTY_FORM)
+      load()
+    } catch (e) {
+      toast(e.message || 'Erro ao cadastrar NF.', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
 
-  const totalEntrada = nfs.reduce((a,n) => a + Number(n.volume_kg), 0)
-  const totalSaldo   = nfs.reduce((a,n) => a + Number(n.volume_saldo_kg), 0)
-  const totalSaida   = saidas.reduce((a,s) => a + Number(s.volume_abatido_kg), 0)
-  const nfsZeradas   = nfs.filter(n => Number(n.volume_saldo_kg) <= 0.01).length
-  const lotesEntrada = agruparPorLote(nfs)
-  const lotesSaida   = agruparSaidasPorLote(saidas)
+  // ── Editar NF ──
+  const abrirEditar = (nf) => {
+    setEditando(nf)
+    setEditForm({
+      data_emissao:    nf.data_emissao || '',
+      numero_nf:       nf.numero_nf || '',
+      codigo_material: nf.codigo_material || '',
+      lote:            nf.lote || '',
+      volume_kg:       String(nf.volume_kg || ''),
+      valor_unitario:  String(nf.valor_unitario || ''),
+    })
+  }
 
-  if (loading) return <div className="loading"><div className="spinner"/><div>Carregando...</div></div>
+  const handleEditar = async () => {
+    if (!editForm.data_emissao || !editForm.numero_nf || !editForm.codigo_material || !editForm.lote || !editForm.volume_kg || !editForm.valor_unitario) {
+      toast('Preencha todos os campos.', 'error'); return
+    }
+    setEditLoading(true)
+    try {
+      await editarNFEntrada(editando.id, {
+        data_emissao:    editForm.data_emissao,
+        numero_nf:       editForm.numero_nf.trim(),
+        codigo_material: editForm.codigo_material.trim(),
+        lote:            editForm.lote.trim(),
+        volume_kg:       parseFloat(editForm.volume_kg),
+        valor_unitario:  parseFloat(editForm.valor_unitario),
+        unidade_id:      editando.unidade_id || unidadeAtiva || '',
+      }, user)
+      toast('NF atualizada!')
+      setEditando(null)
+      load()
+    } catch (e) {
+      toast(e.message || 'Erro ao editar NF.', 'error')
+    } finally {
+      setEditLoading(false)
+    }
+  }
+
+  // ── Deletar NF ──
+  const handleDelete = async (id) => {
+    try {
+      await deletarNFEntrada(id, confirmDelete.numero_nf, user)
+      toast('NF removida.')
+      load()
+    } catch (e) {
+      toast(e.message, 'error')
+    }
+    setConfirmDelete(null)
+  }
 
   return (
     <div>
       <div className="page-header">
-        <div className="page-title">Dashboard <span>Façonagem</span></div>
-        <div className="page-sub">Visão geral do controle de entradas e saídas</div>
+        <div className="page-title"><span>↓</span> NF de Entrada</div>
+        <div className="page-sub">Cadastro de notas fiscais de entrada — importe o PDF para preenchimento automático</div>
       </div>
 
-      {/* KPIs */}
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-label">Total Entrada</div>
-          <div className="stat-value">{fmt(totalEntrada)}</div>
-          <div className="stat-unit">kg em {nfs.length} NFs</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Saldo Disponível</div>
-          <div className="stat-value" style={{color:'var(--accent)'}}>{fmt(totalSaldo)}</div>
-          <div className="stat-unit">kg em estoque</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">Total Saídas</div>
-          <div className="stat-value">{fmt(totalSaida)}</div>
-          <div className="stat-unit">kg em {saidas.length} romaneios</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-label">NFs Zeradas</div>
-          <div className="stat-value" style={{color: nfsZeradas > 0 ? 'var(--warn)' : 'var(--text)'}}>{nfsZeradas}</div>
-          <div className="stat-unit">de {nfs.length} NFs</div>
-        </div>
+      {/* Formulário de cadastro */}
+      <div className="card" style={{marginBottom:24}}>
+        <div className="card-title">Nova NF de Entrada</div>
+        <NFForm
+          form={form} set={set}
+          onSubmit={handleSubmit}
+          loading={loading}
+          extracting={extracting}
+          onPDFUpload={handlePDFUpload}
+          pdfInputRef={pdfRef}
+          isEdit={false}
+        />
       </div>
 
-      {/*
-        ── GRID DE 4 ÁREAS ──────────────────────────────────────────
-        Área A (linha 1, col 1): NFs Recentes — Saldo
-        Área B (linha 1, col 2): Últimas Saídas
-        Área C (linha 2, col 1): Entradas por Lote POY
-        Área D (linha 2, col 2): Saídas por Lote POY
-
-        grid-template-rows: auto auto
-        Linha 1 usa "1fr" → ambos os cards A e B ficam com mesma altura
-      */}
-      <div className="dash-grid">
-
-        {/* A — NFs Recentes */}
-        <div className="dash-grid-a card">
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
-            <div className="card-title" style={{margin:0}}>NFs Recentes — Saldo</div>
-            <button className="btn btn-ghost btn-sm" onClick={() => navigate('/entrada')}>Ver todas →</button>
-          </div>
-          <div className="table-wrap" style={{flex:1}}>
+      {/* Lista de NFs */}
+      <div className="card">
+        <div className="card-title">NFs Cadastradas</div>
+        {loadingList ? (
+          <div className="loading"><div className="spinner"></div></div>
+        ) : (
+          <div className="table-wrap">
             <table>
               <thead>
-                <tr><th>NF</th><th>Lote POY</th><th className="td-right">Saldo (kg)</th><th></th></tr>
+                <tr>
+                  <th>NF</th>
+                  <th>Emissão</th>
+                  <th>Cód. Material</th>
+                  <th>Lote POY</th>
+                  <th className="td-right">Volume (kg)</th>
+                  <th className="td-right">Saldo (kg)</th>
+                  <th className="td-right">V. Unitário</th>
+                  <th style={{width:100}}></th>
+                </tr>
               </thead>
               <tbody>
                 {nfs.length === 0 && (
-                  <tr><td colSpan={4}><div className="empty"><div className="empty-icon">📦</div><div className="empty-text">Nenhuma NF</div></div></td></tr>
+                  <tr><td colSpan={8}><div className="empty"><div className="empty-icon">📦</div><div className="empty-text">Nenhuma NF cadastrada ainda</div></div></td></tr>
                 )}
-                {nfs.slice(0,6).map(nf => (
+                {nfs.map(nf => (
                   <tr key={nf.id}>
                     <td className="td-mono" style={{fontWeight:600}}>{nf.numero_nf}</td>
-                    <td className="td-mono">{nf.lote}</td>
+                    <td>{format(new Date(nf.data_emissao), 'dd/MM/yyyy')}</td>
+                    <td>{nf.codigo_material}</td>
+                    <td>{nf.lote}</td>
+                    <td className="td-right td-mono">{fmt(nf.volume_kg)}</td>
                     <td className="td-right td-mono" style={{color: Number(nf.volume_saldo_kg) <= 0.01 ? 'var(--danger)' : 'var(--accent-2)', fontWeight:600}}>
-                      {fmt4(nf.volume_saldo_kg)}
+                      {fmt(nf.volume_saldo_kg)}
                     </td>
-                    <td><button className="btn btn-ghost btn-sm" onClick={() => navigate(`/nf/${nf.id}`)}>🔍</button></td>
+                    <td className="td-right td-mono">{fmtCurrency(nf.valor_unitario)}</td>
+                    <td>
+                      <div style={{display:'flex', gap:4}}>
+                        <button className="btn btn-ghost btn-sm" title="Ver detalhes" onClick={() => navigate(`/nf/${nf.id}`)}>🔍</button>
+                        <button className="btn btn-ghost btn-sm" title="Editar" onClick={() => abrirEditar(nf)}>✏</button>
+                        <button className="btn btn-danger btn-sm" title="Remover" onClick={() => setConfirmDelete(nf)}>✕</button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </div>
-
-        {/* B — Últimas Saídas */}
-        <div className="dash-grid-b card">
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
-            <div className="card-title" style={{margin:0}}>Últimas Saídas</div>
-            <button className="btn btn-ghost btn-sm" onClick={() => navigate('/saida')}>Ver todas →</button>
-          </div>
-          <div className="table-wrap" style={{flex:1}}>
-            <table>
-              <thead>
-                <tr><th>Romaneio</th><th>Lote POY</th><th>Tipo</th><th className="td-right">Vol. Final</th></tr>
-              </thead>
-              <tbody>
-                {saidas.length === 0 && (
-                  <tr><td colSpan={4}><div className="empty"><div className="empty-icon">📋</div><div className="empty-text">Nenhuma saída</div></div></td></tr>
-                )}
-                {saidas.slice(0,6).map(s => (
-                  <tr key={s.id}>
-                    <td className="td-mono">{s.romaneio_microdata}</td>
-                    <td className="td-mono">{s.lote_poy || s.lote_produto || '—'}</td>
-                    <td>{tipoBadge(s.tipo_saida)}</td>
-                    <td className="td-right td-mono" style={{color:'var(--accent)'}}>{fmt(s.volume_abatido_kg)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* C — Entradas por Lote */}
-        {lotesEntrada.length > 0 && (
-          <div className="dash-grid-c card" style={{padding:'14px 18px'}}>
-            <div className="dash-section-divider" style={{marginTop:0}}>Entradas por Lote POY</div>
-            <div className="lote-col-stack">
-              {lotesEntrada.map(g => <LoteCardEntrada key={g.lote} grupo={g} navigate={navigate} />)}
-            </div>
-          </div>
         )}
-
-        {/* D — Saídas por Lote */}
-        {lotesSaida.length > 0 && (
-          <div className="dash-grid-d card" style={{padding:'14px 18px'}}>
-            <div className="dash-section-divider" style={{marginTop:0}}>Saídas por Lote POY</div>
-            <div className="lote-col-stack">
-              {lotesSaida.map(g => <LoteCardSaida key={g.lote} grupo={g} />)}
-            </div>
-          </div>
-        )}
-
       </div>
+
+      {/* Modal de Edição */}
+      {editando && (
+        <div className="modal-overlay" onClick={() => setEditando(null)}>
+          <div className="modal" style={{maxWidth:640}} onClick={e => e.stopPropagation()}>
+            <div className="modal-title">✏ Editar NF {editando.numero_nf}</div>
+            <NFForm
+              form={editForm} set={setEdit}
+              onSubmit={handleEditar}
+              onCancel={() => setEditando(null)}
+              loading={editLoading}
+              isEdit={true}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Modal confirma delete */}
+      {confirmDelete && (
+        <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-title">⚠ Confirmar remoção</div>
+            <p style={{color:'var(--text-dim)', fontSize:14}}>
+              Deseja remover a NF <strong style={{color:'var(--text)'}}>{confirmDelete.numero_nf}</strong>? Esta ação não pode ser desfeita.
+            </p>
+            <div className="modal-actions">
+              <button className="btn btn-ghost" onClick={() => setConfirmDelete(null)}>Cancelar</button>
+              <button className="btn btn-danger" onClick={() => handleDelete(confirmDelete.id)}>Remover</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Toast toasts={toasts} />
     </div>
   )
 }
