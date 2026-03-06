@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from 'react'
 import {
-  listarSaidas, criarSaida, listarNFsEntrada, previewFIFO,
+  listarSaidas, criarSaida, deletarSaida, listarNFsEntrada, previewFIFO,
   TIPOS_SAIDA, TIPOS_COM_ABATIMENTO,
   calcularVolumeAbatido, gerarRomaneioPDF, exportarExcel, carregarConfig
 } from '../lib/faconagem'
@@ -213,6 +213,7 @@ export default function SaidaPage() {
   const [ultimaSaida, setUltimaSaida] = useState(null)
   const [confirmacao, setConfirmacao] = useState(null)
   const [config, setConfig]         = useState({})
+  const [confirmDeleteSaida, setConfirmDeleteSaida] = useState(null)
 
   // Filtros
   const [fBusca, setFBusca] = useState('')
@@ -306,6 +307,40 @@ export default function SaidaPage() {
   const handleGerarPDF = (saida, alocacoes) => {
     gerarRomaneioPDF(saida, alocacoes, config)
     toast('Romaneio PDF gerado!')
+  }
+
+  // Zera o volume líquido para consumir exatamente o saldo disponível
+  const handleZerarSaldo = () => {
+    if (!form.tipo_saida || totalSaldo <= 0) return
+    const temAbat = TIPOS_COM_ABATIMENTO.includes(form.tipo_saida)
+    // volume_abatido = volume_liquido * (1 - 0.015) → inverso:
+    const volLiqZero = temAbat
+      ? (totalSaldo / (1 - 0.015)).toFixed(3)
+      : totalSaldo.toFixed(3)
+    set('volume_liquido_kg', volLiqZero)
+  }
+
+  const handleDeletarSaida = async (saida) => {
+    try {
+      await deletarSaida(saida.id, user)
+      toast(`Romaneio ${saida.romaneio_microdata} excluído — saldo estornado nas NFs.`)
+      setConfirmDeleteSaida(null)
+      load()
+    } catch (e) {
+      toast(e.message || 'Erro ao excluir saída.', 'error')
+      setConfirmDeleteSaida(null)
+    }
+  }
+
+  const handleDeletar = async (saida) => {
+    if (!window.confirm(`Excluir romaneio ${saida.romaneio_microdata}? O saldo será restaurado nas NFs.`)) return
+    try {
+      await deletarSaida(saida.id, user)
+      toast('Saída excluída e saldo restaurado.')
+      load()
+    } catch (e) {
+      toast(e.message || 'Erro ao excluir saída.', 'error')
+    }
   }
 
   // Filtros
@@ -441,8 +476,25 @@ export default function SaidaPage() {
               </div>
             </div>
             {saldoInsuficiente && (
-              <div style={{marginTop:8, padding:'8px 12px', background:'rgba(255,77,109,0.1)', borderRadius:6, color:'var(--danger)', fontSize:12}}>
-                ⚠ Saldo insuficiente. Disponível: <strong>{fmt(totalSaldo)} kg</strong>
+              <div style={{marginTop:8, padding:'10px 12px', background:'rgba(255,77,109,0.1)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:8}}>
+                <span style={{color:'var(--danger)', fontSize:12}}>
+                  ⚠ Saldo insuficiente. Disponível: <strong>{fmt(totalSaldo)} kg</strong>
+                </span>
+                {totalSaldo > 0.001 && (
+                  <button
+                    className="btn btn-sm"
+                    style={{background:'var(--accent)', color:'#fff', fontSize:11, padding:'4px 10px'}}
+                    onClick={() => {
+                      // Calcula o volume líquido que resulta em volumeAbatido == totalSaldo
+                      const novoLiq = temAbatimento
+                        ? totalSaldo / (1 - 0.015)
+                        : totalSaldo
+                      set('volume_liquido_kg', novoLiq.toFixed(4))
+                    }}
+                  >
+                    ↓ Ajustar para Zerar Saldo ({fmt(temAbatimento ? totalSaldo / (1 - 0.015) : totalSaldo)} kg)
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -493,7 +545,7 @@ export default function SaidaPage() {
               <thead>
                 <tr>
                   <th>Romaneio</th>
-                  <th>Cód. Produto</th>
+                  <th>Cód. Material</th>
                   <th>Lote POY</th>
                   <th>Lote Acab.</th>
                   <th>Tipo</th>
@@ -516,7 +568,7 @@ export default function SaidaPage() {
                 {saidasFiltradas.map(s => (
                   <tr key={s.id}>
                     <td className="td-mono" style={{fontWeight:600}}>{s.romaneio_microdata}</td>
-                    <td>{s.codigo_produto}</td>
+                    <td>{s.codigo_material || s.codigo_produto}</td>
                     <td className="td-mono">{s.lote_poy || s.lote_produto || '—'}</td>
                     <td className="td-mono" style={{color:'var(--text-dim)'}}>{s.lote_acabado || '—'}</td>
                     <td>{tipoBadge(s.tipo_saida)}</td>
@@ -526,9 +578,12 @@ export default function SaidaPage() {
                     <td style={{fontSize:12, color:'var(--text-dim)', whiteSpace:'nowrap'}}>
                       {s.criado_em ? format(new Date(s.criado_em), 'dd/MM/yy HH:mm') : '—'}
                     </td>
-                    <td>
+                    <td style={{whiteSpace:'nowrap', display:'flex', gap:4}}>
                       <button className="btn btn-ghost btn-sm" title="Gerar Romaneio PDF"
                         onClick={() => handleGerarPDF(s, s.alocacao_saida || [])}>📄</button>
+                      <button className="btn btn-ghost btn-sm" title="Excluir saída"
+                        onClick={() => setConfirmDeleteSaida(s)}
+                        style={{color:'var(--danger)'}}>🗑</button>
                     </td>
                   </tr>
                 ))}
@@ -554,6 +609,27 @@ export default function SaidaPage() {
           onClose={() => setUltimaSaida(null)}
           onPDF={() => handleGerarPDF(ultimaSaida.saida, ultimaSaida.alocacoes)}
         />
+      )}
+
+      {confirmDeleteSaida && (
+        <div className="modal-overlay" onClick={() => setConfirmDeleteSaida(null)}>
+          <div className="modal" style={{maxWidth:420}} onClick={e => e.stopPropagation()}>
+            <div className="modal-title" style={{color:'var(--danger)'}}>🗑 Excluir Saída</div>
+            <p style={{color:'var(--text)', marginBottom:12}}>
+              Deseja excluir o romaneio <strong>{confirmDeleteSaida.romaneio_microdata}</strong>?
+            </p>
+            <p style={{fontSize:12, color:'var(--text-dim)', marginBottom:20}}>
+              O volume de <strong>{fmt(confirmDeleteSaida.volume_abatido_kg)} kg</strong> será estornado nas NFs de entrada correspondentes.
+            </p>
+            <div style={{display:'flex', gap:10, justifyContent:'flex-end'}}>
+              <button className="btn btn-ghost" onClick={() => setConfirmDeleteSaida(null)}>Cancelar</button>
+              <button className="btn" style={{background:'var(--danger)', color:'#fff'}}
+                onClick={() => handleDeletarSaida(confirmDeleteSaida)}>
+                Excluir e Estornar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <Toast toasts={toasts} />

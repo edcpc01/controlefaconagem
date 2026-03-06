@@ -681,3 +681,61 @@ tr:hover td { background: rgba(34,85,184,0.08); }
 /* ── 4-col responsive ── */
 @media (max-width: 1100px) { .form-grid-4 { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 600px)  { .form-grid-4 { grid-template-columns: 1fr; } }
+
+/* ── Mobile Layout ─────────────────────────────────────── */
+@media (max-width: 640px) {
+  .nav { padding: 0 12px; gap: 0; overflow-x: auto; }
+  .nav-brand { min-width: 100px; }
+  .nav-link { font-size: 11px; padding: 0 8px; white-space: nowrap; }
+  .nav-link span { display: none; } /* esconde texto, mostra só ícone */
+
+  .page-header { padding: 12px 0 8px; }
+  .page-title  { font-size: 20px; }
+
+  .stats-grid  { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat-card   { padding: 12px; }
+  .stat-value  { font-size: 20px; }
+
+  .dash-grid   { grid-template-columns: 1fr; }
+
+  .form-grid-4 { grid-template-columns: 1fr 1fr !important; }
+  @media (max-width: 420px) {
+    .form-grid-4 { grid-template-columns: 1fr !important; }
+  }
+
+  .table-wrap  { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table        { min-width: 520px; }
+
+  .card        { padding: 14px 12px; }
+  .modal       { margin: 12px; padding: 16px; max-width: calc(100vw - 24px) !important; }
+
+  /* Header compacto mobile */
+  .nav-unit-selector { display: none; }
+}
+
+/* ── PWA Install Banner ────────────────────────────────── */
+.pwa-install-banner {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--card-bg);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  z-index: 9999;
+  max-width: 360px;
+  width: calc(100vw - 32px);
+  animation: slideUp 0.3s ease;
+}
+.pwa-install-banner .pwa-text { flex: 1; font-size: 13px; }
+.pwa-install-banner .pwa-text strong { color: var(--accent); display: block; }
+.pwa-install-banner .pwa-text span { color: var(--text-dim); font-size: 11px; }
+@keyframes slideUp {
+  from { opacity: 0; transform: translateX(-50%) translateY(20px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}

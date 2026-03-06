@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { listarNFsEntrada, criarNFEntrada, editarNFEntrada, deletarNFEntrada, extrairDadosNFdoPDF } from '../lib/faconagem'
+import { listarNFsEntrada, criarNFEntrada, editarNFEntrada, deletarNFEntrada, extrairDadosNFdoPDF, verificarNFDuplicada } from '../lib/faconagem'
 import { useAuth } from '../lib/AuthContext'
 import { useUser } from '../lib/UserContext'
 import { format } from 'date-fns'
@@ -162,6 +162,12 @@ export default function EntradaPage() {
     }
     setLoading(true)
     try {
+      // Trava duplicata — verifica em TODAS as unidades
+      const duplicata = await verificarNFDuplicada(form.numero_nf.trim())
+      if (duplicata) {
+        toast(`NF ${form.numero_nf} já está cadastrada no sistema. Números de NF são únicos em todas as unidades.`, 'error')
+        setLoading(false); return
+      }
       await criarNFEntrada({
         data_emissao:    form.data_emissao,
         numero_nf:       form.numero_nf.trim(),

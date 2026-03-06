@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './lib/AuthContext'
 import { ThemeProvider, useTheme } from './lib/ThemeContext'
@@ -12,6 +12,40 @@ import ConfigPage    from './pages/ConfigPage'
 import UsersPage     from './pages/UsersPage'
 import LoginPage     from './pages/LoginPage'
 import './index.css'
+
+// ── PWA Install Banner ───────────────────────────────────────────
+function PWAInstallBanner() {
+  const [prompt, setPrompt] = useState(null)
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    const handler = (e) => {
+      e.preventDefault()
+      setPrompt(e)
+      setVisible(true)
+    }
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
+
+  if (!visible || !prompt) return null
+
+  return (
+    <div className="pwa-install-banner">
+      <span style={{fontSize:28}}>📱</span>
+      <div className="pwa-text">
+        <strong>Instalar App</strong>
+        <span>Adicione à tela inicial para acesso rápido</span>
+      </div>
+      <button className="btn btn-primary btn-sm" onClick={async () => {
+        prompt.prompt()
+        await prompt.userChoice
+        setVisible(false)
+      }}>Instalar</button>
+      <button className="btn btn-ghost btn-sm" onClick={() => setVisible(false)}>✕</button>
+    </div>
+  )
+}
 
 const NAV_BASE = [
   { to: '/',        label: 'Dashboard',  icon: '◈', end: true },
@@ -150,18 +184,21 @@ function ProtectedApp() {
   if (user === null) return <LoginPage />
 
   return (
-    <Layout>
-      <Routes>
-        <Route path="/"         element={<DashboardPage />} />
-        <Route path="/entrada"  element={<EntradaPage />} />
-        <Route path="/nf/:id"   element={<NFDetailPage />} />
-        <Route path="/saida"    element={<SaidaPage />} />
-        <Route path="/log"      element={<LogPage />} />
-        <Route path="/config"   element={<ConfigPage />} />
-        <Route path="/usuarios" element={<UsersPage />} />
-        <Route path="*"         element={<Navigate to="/" replace />} />
-      </Routes>
-    </Layout>
+    <>
+      <Layout>
+        <Routes>
+          <Route path="/"         element={<DashboardPage />} />
+          <Route path="/entrada"  element={<EntradaPage />} />
+          <Route path="/nf/:id"   element={<NFDetailPage />} />
+          <Route path="/saida"    element={<SaidaPage />} />
+          <Route path="/log"      element={<LogPage />} />
+          <Route path="/config"   element={<ConfigPage />} />
+          <Route path="/usuarios" element={<UsersPage />} />
+          <Route path="*"         element={<Navigate to="/" replace />} />
+        </Routes>
+      </Layout>
+      <PWAInstallBanner />
+    </>
   )
 }
 

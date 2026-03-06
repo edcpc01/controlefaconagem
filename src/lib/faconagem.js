@@ -382,6 +382,42 @@ export async function listarSaidas(unidadeId = '') {
   return todas.filter(s => (s.unidade_id || '') === unidadeId)
 }
 
+// Exclui uma saída e estorna o saldo nas NFs de entrada
+export async function deletarSaida(saidaId, usuario) {
+  // Busca alocações desta saída para estornar
+  const alocSnap = await getDocs(
+    query(collection(db, 'alocacao_saida'), where('saida_id', '==', saidaId))
+  )
+  const saidaSnap = await getDoc(doc(db, 'saida', saidaId))
+  if (!saidaSnap.exists()) throw new Error('Saída não encontrada.')
+  const saida = saidaSnap.data()
+
+  const batch = writeBatch(db)
+  const now   = Timestamp.now()
+
+  // Estorna saldo em cada NF alocada
+  for (const alocDoc of alocSnap.docs) {
+    const aloc   = alocDoc.data()
+    const nfSnap = await getDoc(doc(db, 'nf_entrada', aloc.nf_entrada_id))
+    if (nfSnap.exists()) {
+      const saldoAtual  = Number(nfSnap.data().volume_saldo_kg || 0)
+      const novoSaldo   = saldoAtual + Number(aloc.volume_alocado_kg)
+      batch.update(doc(db, 'nf_entrada', aloc.nf_entrada_id), { volume_saldo_kg: novoSaldo, atualizado_em: now })
+    }
+    batch.delete(doc(db, 'alocacao_saida', alocDoc.id))
+  }
+
+  batch.delete(doc(db, 'saida', saidaId))
+  await batch.commit()
+  await registrarLog('SAIDA_EXCLUIDA', `Romaneio ${saida.romaneio_microdata} excluído — saldo estornado`, usuario)
+}
+
+// Verifica se número de NF já existe em qualquer unidade
+export async function verificarNFDuplicada(numeroNF) {
+  const snap = await getDocs(query(collection(db, 'nf_entrada'), where('numero_nf', '==', String(numeroNF).trim())))
+  return !snap.empty
+}
+
 // ─────────────────────────────────────────────────────────────────
 // EXPORTAÇÃO EXCEL (.xlsx)
 // ─────────────────────────────────────────────────────────────────
@@ -458,108 +494,109 @@ export function exportarExcel(nfs, saidas) {
 // ─────────────────────────────────────────────────────────────────
 
 export function gerarRomaneioPDF(saida, alocacoes, config = {}) {
-  const pdoc   = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-  const W      = 210
-  const AZ_ESC = [15, 40, 80]
-  const AZ_MED = [26, 80, 150]
-  const AZ_CLR = [220, 235, 255]
-  const BRANCO = [255, 255, 255]
-  const headerH = config.logoBase64 ? 46 : 38
-
-  // Cabeçalho
-  pdoc.setFillColor(...AZ_ESC)
-  pdoc.rect(0, 0, W, headerH, 'F')
-
-  if (config.logoBase64) {
-    try { pdoc.addImage(config.logoBase64, 'PNG', 14, 6, 32, 32) } catch (_) {}
-  }
-
-  pdoc.setTextColor(...BRANCO)
-  pdoc.setFontSize(18); pdoc.setFont('helvetica', 'bold')
-  pdoc.text('RHODIA SANTO ANDRÉ', W / 2, 14, { align: 'center' })
-  pdoc.setFontSize(11); pdoc.setFont('helvetica', 'normal')
-  pdoc.text('ROMANEIO DE SAÍDA — FAÇONAGEM', W / 2, 22, { align: 'center' })
-  pdoc.setFontSize(9)
-  pdoc.text(`Emitido em: ${format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}`, W / 2, 30, { align: 'center' })
-
-  pdoc.setDrawColor(...AZ_MED); pdoc.setLineWidth(0.5)
-  pdoc.line(14, headerH + 2, W - 14, headerH + 2)
+  const pdoc  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const W     = 210
+  const DARK  = [15, 40, 80]
+  const MED   = [26, 80, 150]
+  const LIGHT = [220, 235, 255]
+  const WHITE = [255, 255, 255]
+  const GRAY  = [80, 80, 80]
 
   const tipoLbl = TIPOS_SAIDA.find(t => t.value === saida.tipo_saida)?.label || saida.tipo_saida
   const temAbat = TIPOS_COM_ABATIMENTO.includes(saida.tipo_saida)
-  let y = headerH + 12
+  const fmtKg   = n => n != null ? Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 }) + ' kg' : '—'
+  const codigoMaterial = saida.codigo_material || saida.codigo_produto || '—'
 
-  // Box dados principais
-  pdoc.setFillColor(...AZ_CLR)
-  pdoc.roundedRect(14, y - 5, W - 28, 62, 3, 3, 'F')
+  // ── Cabeçalho ──────────────────────────────────────────
+  const headerH = 36
+  pdoc.setFillColor(...DARK)
+  pdoc.rect(0, 0, W, headerH, 'F')
 
-  const campos = [
-    ['Romaneio Microdata', saida.romaneio_microdata],
-    ['Código do Produto',  saida.codigo_produto],
-    ['Lote POY',           saida.lote_poy || saida.lote_produto || '—'],
-    ['Tipo de Saída',      tipoLbl],
-  ]
-  campos.forEach(([lbl, val], i) => {
-    const col = i % 2 === 0 ? 20 : W / 2 + 6
-    const row = y + Math.floor(i / 2) * 10
-    pdoc.setFont('helvetica', 'bold'); pdoc.setTextColor(80, 80, 80)
-    pdoc.text(lbl + ':', col, row)
-    pdoc.setFont('helvetica', 'normal'); pdoc.setTextColor(...AZ_ESC)
-    pdoc.text(String(val ?? '—'), col + 44, row)
-  })
-
-  y += 22
-
-  // Lote Acabado e Quantidade (se preenchidos)
-  if (saida.lote_acabado) {
-    pdoc.setFont('helvetica', 'bold'); pdoc.setTextColor(80, 80, 80)
-    pdoc.text('Lote Acabado:', 20, y)
-    pdoc.setFont('helvetica', 'normal'); pdoc.setTextColor(...AZ_ESC)
-    pdoc.text(String(saida.lote_acabado), 64, y)
+  if (config.logoBase64) {
+    try { pdoc.addImage(config.logoBase64, 'PNG', 14, 5, 26, 26) } catch (_) {}
   }
-  if (saida.quantidade) {
-    pdoc.setFont('helvetica', 'bold'); pdoc.setTextColor(80, 80, 80)
-    pdoc.text('Quantidade:', W / 2 + 6, y)
-    pdoc.setFont('helvetica', 'normal'); pdoc.setTextColor(...AZ_ESC)
-    pdoc.text(String(saida.quantidade), W / 2 + 36, y)
+
+  pdoc.setTextColor(...WHITE)
+  pdoc.setFontSize(16); pdoc.setFont('helvetica', 'bold')
+  pdoc.text('RHODIA FAÇONAGEM', W / 2, 13, { align: 'center' })
+  pdoc.setFontSize(10); pdoc.setFont('helvetica', 'normal')
+  pdoc.text('ROMANEIO DE SAÍDA', W / 2, 21, { align: 'center' })
+  pdoc.setFontSize(8)
+  pdoc.text(`Emitido: ${format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}`, W / 2, 29, { align: 'center' })
+
+  let y = headerH + 8
+
+  // ── Dados do Romaneio ──────────────────────────────────
+  // Calcula altura do box dinamicamente
+  const hasOpcional = !!(saida.lote_acabado || saida.quantidade)
+  const boxH = 14 + 14 + 14 + (hasOpcional ? 14 : 0)
+  pdoc.setFillColor(...LIGHT)
+  pdoc.roundedRect(14, y, W - 28, boxH, 3, 3, 'F')
+
+  const linha = (lbl, val, cx, cy) => {
+    pdoc.setFont('helvetica', 'bold'); pdoc.setFontSize(8); pdoc.setTextColor(...GRAY)
+    pdoc.text(lbl, cx, cy)
+    pdoc.setFont('helvetica', 'normal'); pdoc.setTextColor(...DARK)
+    pdoc.text(String(val ?? '—'), cx, cy + 5)
   }
-  if (saida.lote_acabado || saida.quantidade) y += 10
 
-  // Volumes
-  const fmtKg = n => n != null ? Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 }) : '—'
+  const col1 = 20, col2 = W / 2 + 4
+  y += 7
+  linha('Romaneio Microdata',    saida.romaneio_microdata,  col1, y)
+  linha('Código do Material',    codigoMaterial,            col2, y)
+  y += 14
+  linha('Lote POY',              saida.lote_poy || '—',     col1, y)
+  linha('Tipo de Saída',         tipoLbl,                   col2, y)
+  y += 14
+  if (saida.lote_acabado || saida.quantidade) {
+    if (saida.lote_acabado) linha('Lote Acabado', saida.lote_acabado, col1, y)
+    if (saida.quantidade)   linha('Quantidade',   saida.quantidade,  col2, y)
+    y += 14
+  }
 
-  pdoc.setFont('helvetica', 'bold'); pdoc.setTextColor(80, 80, 80)
-  pdoc.text('Volume Líquido:', 20, y)
-  pdoc.setFont('helvetica', 'normal'); pdoc.setTextColor(...AZ_ESC)
-  pdoc.text(`${fmtKg(saida.volume_liquido_kg || saida.volume_bruto_kg)} kg`, 64, y)
+  y += 4  // padding após o box
+
+  // ── Box de Volumes ─────────────────────────────────────
+  const hasVolBruto = !!(saida.volume_bruto_kg && saida.volume_bruto_kg !== saida.volume_liquido_kg)
+  const volBoxH = 7 + 14 + (hasVolBruto ? 0 : 0) + (temAbat ? 16 : 12)
+  pdoc.setFillColor(240, 246, 255)
+  pdoc.roundedRect(14, y, W - 28, volBoxH, 3, 3, 'F')
+  y += 7
+
+  linha('Volume Líquido',
+    fmtKg(saida.volume_liquido_kg || saida.volume_bruto_kg), col1, y)
 
   if (saida.volume_bruto_kg && saida.volume_bruto_kg !== saida.volume_liquido_kg) {
-    pdoc.setFont('helvetica', 'bold'); pdoc.setTextColor(80, 80, 80)
-    pdoc.text('Volume Bruto:', W / 2 + 6, y)
-    pdoc.setFont('helvetica', 'normal'); pdoc.setTextColor(...AZ_ESC)
-    pdoc.text(`${fmtKg(saida.volume_bruto_kg)} kg`, W / 2 + 38, y)
-    y += 10
+    linha('Volume Bruto', fmtKg(saida.volume_bruto_kg), col2, y)
   }
+  y += 14
 
   if (temAbat) {
-    pdoc.setFont('helvetica', 'bold'); pdoc.setTextColor(80, 80, 80)
-    pdoc.text('Com Abatimento (1,5%):', 20, y)
-    pdoc.setFont('helvetica', 'bold'); pdoc.setTextColor(...AZ_MED)
-    pdoc.text(`${fmtKg(saida.volume_abatido_kg)} kg`, 76, y)
-    y += 10
+    pdoc.setFont('helvetica', 'bold'); pdoc.setFontSize(9); pdoc.setTextColor(...DARK)
+    pdoc.text('Volume a Debitar do Estoque (com abat. 1,5%):', col1, y)
+    pdoc.setTextColor(...MED)
+    pdoc.text(fmtKg(saida.volume_abatido_kg), col1 + 88, y)
+    y += 12
+  } else {
+    pdoc.setFont('helvetica', 'bold'); pdoc.setFontSize(9); pdoc.setTextColor(...DARK)
+    pdoc.text('Volume a Debitar do Estoque:', col1, y)
+    pdoc.setTextColor(...MED)
+    pdoc.text(fmtKg(saida.volume_abatido_kg), col1 + 60, y)
+    y += 8
   }
 
-  y += 8
+  y += 6
 
-  // Tabela FIFO
-  pdoc.setFillColor(...AZ_ESC); pdoc.setTextColor(...BRANCO)
-  pdoc.setFontSize(11); pdoc.setFont('helvetica', 'bold')
-  pdoc.roundedRect(14, y - 6, W - 28, 10, 2, 2, 'F')
-  pdoc.text('ALOCAÇÃO NAS NFs DE ENTRADA (FIFO)', W / 2, y, { align: 'center' })
-  y += 8
+  // ── Tabela FIFO ────────────────────────────────────────
+  pdoc.setFillColor(...DARK); pdoc.setTextColor(...WHITE)
+  pdoc.setFontSize(10); pdoc.setFont('helvetica', 'bold')
+  pdoc.roundedRect(14, y, W - 28, 9, 2, 2, 'F')
+  pdoc.text('ALOCAÇÃO NAS NFs DE ENTRADA (FIFO)', W / 2, y + 6, { align: 'center' })
+  y += 11
 
   autoTable(pdoc, {
-    startY: y, margin: { left: 14, right: 14 },
+    startY: y,
+    margin: { left: 14, right: 14 },
     head: [['NF de Entrada', 'Data de Emissão', 'Volume Abatido (kg)']],
     body: alocacoes.map(a => [
       a.numero_nf,
@@ -568,31 +605,78 @@ export function gerarRomaneioPDF(saida, alocacoes, config = {}) {
     ]),
     foot: [[
       { content: 'TOTAL', styles: { fontStyle: 'bold' } }, '',
-      { content: fmtKg(alocacoes.reduce((s, a) => s + Number(a.volume_alocado_kg), 0)) + ' kg', styles: { fontStyle: 'bold' } },
+      { content: fmtKg(alocacoes.reduce((s, a) => s + Number(a.volume_alocado_kg), 0)), styles: { fontStyle: 'bold' } },
     ]],
-    headStyles:         { fillColor: AZ_MED, textColor: BRANCO, fontStyle: 'bold', fontSize: 10 },
+    headStyles:         { fillColor: MED, textColor: WHITE, fontStyle: 'bold', fontSize: 9 },
     bodyStyles:         { textColor: [30, 30, 60], fontSize: 9 },
-    footStyles:         { fillColor: AZ_CLR, textColor: AZ_ESC, fontStyle: 'bold' },
+    footStyles:         { fillColor: LIGHT, textColor: DARK, fontStyle: 'bold' },
     alternateRowStyles: { fillColor: [240, 246, 255] },
     columnStyles:       { 2: { halign: 'right' } },
   })
 
-  // Assinatura
-  const finalY = pdoc.lastAutoTable.finalY + 16
-  pdoc.setDrawColor(...AZ_MED); pdoc.setLineWidth(0.3)
-  pdoc.line(14, finalY + 10, 90, finalY + 10)
-  pdoc.line(120, finalY + 10, W - 14, finalY + 10)
+  // ── Assinatura ─────────────────────────────────────────
+  const signY = pdoc.lastAutoTable.finalY + 14
+  pdoc.setDrawColor(...MED); pdoc.setLineWidth(0.3)
+  pdoc.line(14, signY, 90, signY)
+  pdoc.line(W / 2 + 10, signY, W - 14, signY)
   pdoc.setFontSize(8); pdoc.setTextColor(100, 100, 100); pdoc.setFont('helvetica', 'normal')
-  pdoc.text('Responsável pela Saída', 52, finalY + 15, { align: 'center' })
-  pdoc.text('Conferente / Aprovação', W - 14 - 31, finalY + 15, { align: 'center' })
+  pdoc.text('Responsável pela Saída', 52, signY + 5, { align: 'center' })
+  pdoc.text('Conferente / Aprovação', W / 2 + 10 + 34, signY + 5, { align: 'center' })
 
-  // Rodapé
+  // ── Rodapé ─────────────────────────────────────────────
   const pH = pdoc.internal.pageSize.height
-  pdoc.setFillColor(...AZ_ESC)
-  pdoc.rect(0, pH - 14, W, 14, 'F')
-  pdoc.setTextColor(...BRANCO); pdoc.setFontSize(8); pdoc.setFont('helvetica', 'normal')
-  pdoc.text('Rhodia Santo André — Sistema de Controle de Façonagem', W / 2, pH - 5, { align: 'center' })
+  pdoc.setFillColor(...DARK)
+  pdoc.rect(0, pH - 12, W, 12, 'F')
+  pdoc.setTextColor(...WHITE); pdoc.setFontSize(7); pdoc.setFont('helvetica', 'normal')
+  pdoc.text('Rhodia — Sistema de Controle de Façonagem', W / 2, pH - 4, { align: 'center' })
 
-  const filename = `romaneio_${saida.romaneio_microdata}_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`
-  pdoc.save(filename)
+  pdoc.save(`romaneio_${saida.romaneio_microdata}_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`)
+}
+
+// ─────────────────────────────────────────────────────────────────
+// SAÍDA — DELETAR + EDITAR (estorna alocações e restaura saldo)
+// ─────────────────────────────────────────────────────────────────
+
+export async function deletarSaida(saidaId, usuario) {
+  // Busca as alocações para restaurar saldos das NFs
+  const alocSnap = await getDocs(
+    query(collection(db, 'alocacao_saida'), where('saida_id', '==', saidaId))
+  )
+  const batch = writeBatch(db)
+  const now   = Timestamp.now()
+
+  // Restaura saldo em cada NF de entrada
+  for (const alocDoc of alocSnap.docs) {
+    const aloc     = alocDoc.data()
+    const nfSnap   = await getDoc(doc(db, 'nf_entrada', aloc.nf_entrada_id))
+    if (nfSnap.exists()) {
+      const saldoAtual  = Number(nfSnap.data().volume_saldo_kg || 0)
+      const novoSaldo   = saldoAtual + Number(aloc.volume_alocado_kg)
+      batch.update(doc(db, 'nf_entrada', aloc.nf_entrada_id), {
+        volume_saldo_kg: novoSaldo, atualizado_em: now
+      })
+    }
+    batch.delete(alocDoc.ref)
+  }
+
+  batch.delete(doc(db, 'saida', saidaId))
+  await batch.commit()
+  await registrarLog('SAIDA_DELETADA', `Saída ${saidaId} removida`, usuario)
+}
+
+// ─────────────────────────────────────────────────────────────────
+// NF ENTRADA — VERIFICAR DUPLICATA (qualquer unidade)
+// ─────────────────────────────────────────────────────────────────
+
+export async function verificarNFDuplicada(numeroNF) {
+  const snap = await getDocs(
+    query(collection(db, 'nf_entrada'), where('numero_nf', '==', String(numeroNF).trim()))
+  )
+  if (snap.empty) return null
+  const nf = snap.docs[0].data()
+  return {
+    existe: true,
+    unidade_id: nf.unidade_id || '',
+    data_emissao: nf.data_emissao,
+  }
 }

@@ -76,13 +76,30 @@ export default async function handler(req, res) {
         max_tokens: 512,
         temperature: 0,
         messages: [
-      {
+          {
             role: 'system',
             content: 'Você é um extrator de dados de Notas Fiscais brasileiras. Retorne APENAS JSON válido, sem markdown, sem texto adicional.'
           },
           {
             role: 'user',
-            content: `Extraia os dados desta Nota Fiscal e retorne SOMENTE este JSON:\n{\n  "numero_nf": "número da NF sem zeros à esquerda",\n  "data_emissao": "data de emissão no formato YYYY-MM-DD",\n  "codigo_material": "código do produto/item (campo COD. ou Código do Produto na tabela de itens — NÃO é o NCM/SH que tem 8 dígitos). Ex: 140911",\n  "lote": "código do lote POY (campo Lote ou Lote/Qtd). Ex: 5327",\n  "volume_kg": 0,\n  "valor_unitario": 0\n}\n\nATENÇÃO:\n- codigo_material = campo COD. da tabela de produtos (ex: 140911). NÃO é o NCM/SH (sempre 8 dígitos como 54024520).\n- lote = apenas os primeiros 4 dígitos numéricos do campo Lote (ex: 53274S vira 5327).\n- volume_kg = campo QUANTID. em KG.\n- valor_unitario = campo VALOR UNITÁRIO.\n\nNOTA FISCAL:\n${textoNF.slice(0, 4000)}`
+            content: `Extraia os dados desta Nota Fiscal e retorne SOMENTE este JSON:
+{
+  "numero_nf": "número da NF sem zeros à esquerda",
+  "data_emissao": "data de emissão no formato YYYY-MM-DD",
+  "codigo_material": "código do produto/item (campo COD. ou Código do Produto na tabela de itens — NÃO é o NCM/SH que tem 8 dígitos). Ex: 140911",
+  "lote": "código do lote POY (campo Lote ou Lote/Qtd). Ex: 5327",
+  "volume_kg": quantidade em kg como número decimal,
+  "valor_unitario": valor unitário como número decimal
+}
+
+ATENÇÃO:
+- "codigo_material" = campo COD. da tabela de produtos (ex: 140911, 99640). NÃO confundir com NCM/SH (sempre 8 dígitos como 54024520).
+- "lote" = apenas os primeiros 4 dígitos numéricos do campo Lote (ex: "53274S" → "5327").
+- "volume_kg" = campo QUANTID. ou Quantidade em KG.
+- "valor_unitario" = campo VALOR UNITÁRIO.
+
+TEXTO DA NOTA FISCAL:
+${textoNF.slice(0, 4000)}`
           }
         ]
       })
