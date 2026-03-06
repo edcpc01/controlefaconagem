@@ -1,27 +1,60 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import { VitePWA } from 'vite-plugin-pwa'
 
-    <!-- PWA / Theme -->
-    <meta name="theme-color" content="#0f1e3d" />
-    <meta name="description" content="Sistema de controle de façonagem - Rhodia" />
+// Versão automática baseada no timestamp de build
+const BUILD_VERSION = Date.now().toString()
 
-    <!-- iOS PWA (Safari) -->
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Façonagem" />
-    <link rel="apple-touch-icon" href="/icon-192.png" />
-    <link rel="apple-touch-startup-image" href="/icon-512.png" />
+export default defineConfig({
+  plugins: [
+    react(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon.ico', 'icon-192.png', 'icon-512.png'],
+      manifest: {
+        name: 'Façonagem Rhodia - Controle de Entradas e Saídas',
+        short_name: 'Façonagem',
+        description: 'Sistema de controle de façonagem - entradas e saídas',
+        theme_color: '#1a3a6b',
+        background_color: '#0f1e3d',
+        display: 'standalone',
+        orientation: 'any',
+        scope: '/',
+        start_url: '/',
+        icons: [
+          { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+        ]
+      },
+      workbox: {
+        // Cache versionado: cada build gera novo hash → browser instala automaticamente
+        cacheId: `faconagem-v${BUILD_VERSION}`,
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        cleanupOutdatedCaches: true,
+        skipWaiting: true,
+        clientsClaim: true,
+        runtimeCaching: [
+          {
+            // Firebase Firestore
+            urlPattern: /^https:\/\/firestore\.googleapis\.com\/.*/i,
+            handler: 'NetworkFirst',
+            options: { cacheName: 'firebase-firestore', networkTimeoutSeconds: 8 }
+          },
+          {
+            // Firebase Auth
+            urlPattern: /^https:\/\/.*\.firebaseapp\.com\/.*/i,
+            handler: 'NetworkFirst',
+            options: { cacheName: 'firebase-auth', networkTimeoutSeconds: 8 }
+          },
+          {
+            // CDN pdfjs worker
+            urlPattern: /^https:\/\/cdnjs\.cloudflare\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: { cacheName: 'cdn-assets', expiration: { maxAgeSeconds: 86400 * 30 } }
+          }
+        ]
+      }
+    })
+  ]
+})
 
-    <!-- Ícones e manifest -->
-    <link rel="icon" type="image/png" href="/favicon.ico" />
-
-    <title>Façonagem — Rhodia</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
-</html>
