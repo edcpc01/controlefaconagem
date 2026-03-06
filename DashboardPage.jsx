@@ -1,744 +1,638 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+import { db } from './firebase'
+import {
+  collection, doc, addDoc, getDoc, getDocs, deleteDoc, updateDoc,
+  query, where, orderBy, Timestamp, writeBatch, runTransaction, setDoc
+} from 'firebase/firestore'
+import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
+import { format } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
+import * as XLSX from 'xlsx'
 
-:root {
-  --blue-900: #050e24;
-  --blue-800: #0a1a3d;
-  --blue-700: #0f2860;
-  --blue-600: #1a3a82;
-  --blue-500: #2255b8;
-  --blue-400: #3a72d8;
-  --blue-300: #6093e8;
-  --blue-200: #96b8f2;
-  --blue-100: #ccdcf9;
-  --blue-50:  #e8f0fd;
-  --accent:   #00c3ff;
-  --accent-2: #00e5b0;
-  --warn:     #ff9f40;
-  --danger:   #ff4d6d;
-  --success:  #00e5b0;
-  --text:     #e8f0fd;
-  --text-dim: #7a9acc;
-  --border:   rgba(60, 120, 220, 0.25);
-  --card-bg:  rgba(15, 40, 96, 0.6);
-  --radius:   10px;
-  --shadow:   0 4px 24px rgba(0,0,0,0.4);
-}
+// ─────────────────────────────────────────────────────────────────
+// CONSTANTES
+// ─────────────────────────────────────────────────────────────────
 
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+export const TIPOS_COM_ABATIMENTO = ['faturamento', 'sucata', 'estopa']
 
-html { font-size: 16px; scroll-behavior: smooth; }
+export const TIPOS_SAIDA = [
+  { value: 'faturamento',        label: 'Faturamento' },
+  { value: 'dev_qualidade',      label: 'Devolução Qualidade' },
+  { value: 'dev_processo',       label: 'Devolução Processo' },
+  { value: 'dev_final_campanha', label: 'Devolução Final de Campanha' },
+  { value: 'sucata',             label: 'Sucata' },
+  { value: 'estopa',             label: 'Estopa' },
+]
 
-body {
-  font-family: 'IBM Plex Sans', sans-serif;
-  background: var(--blue-900);
-  color: var(--text);
-  min-height: 100vh;
-  background-image:
-    radial-gradient(ellipse at 20% 10%, rgba(26,80,180,0.2) 0%, transparent 60%),
-    radial-gradient(ellipse at 80% 90%, rgba(0,195,255,0.08) 0%, transparent 60%);
+export const PERCENTUAL_ABATIMENTO = 0.015
+
+export function calcularVolumeAbatido(volumeLiquido, tipoSaida) {
+  // O campo agora é "volume líquido" — o abatimento ainda se aplica sobre ele
+  return TIPOS_COM_ABATIMENTO.includes(tipoSaida)
+    ? volumeLiquido * (1 - PERCENTUAL_ABATIMENTO)
+    : volumeLiquido
 }
 
-/* ── HEADER ── */
-.header {
-  position: sticky; top: 0; z-index: 100;
-  background: rgba(5, 14, 36, 0.95);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border);
-  box-shadow: 0 2px 20px rgba(0,0,0,0.5);
-}
-.header-inner {
-  max-width: 1200px; margin: 0 auto;
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 0 20px; height: 60px;
-}
-.header-brand { display: flex; align-items: center; gap: 12px; }
-.brand-icon { font-size: 28px; color: var(--accent); line-height: 1; }
-.brand-title { font-size: 16px; font-weight: 700; color: var(--text); line-height: 1.1; }
-.brand-sub { font-size: 10px; color: var(--text-dim); letter-spacing: 0.05em; text-transform: uppercase; }
+// ─────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────
 
-.nav-desktop { display: flex; gap: 4px; }
-.nav-link {
-  display: flex; align-items: center; gap: 6px;
-  padding: 7px 14px; border-radius: 6px;
-  font-size: 13px; font-weight: 500; color: var(--text-dim);
-  text-decoration: none; transition: all 0.2s;
-}
-.nav-link:hover { background: rgba(58,114,216,0.15); color: var(--text); }
-.nav-link.active { background: rgba(34,85,184,0.3); color: var(--accent); border: 1px solid rgba(0,195,255,0.2); }
-.nav-icon { font-size: 14px; }
-
-.hamburger { display: none; background: none; border: none; color: var(--text); font-size: 22px; cursor: pointer; }
-.nav-mobile { padding: 8px 16px 12px; display: flex; flex-direction: column; gap: 4px; }
-.nav-link-mobile {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 14px; border-radius: 6px;
-  font-size: 14px; font-weight: 500; color: var(--text-dim);
-  text-decoration: none; transition: all 0.2s;
-}
-.nav-link-mobile:hover, .nav-link-mobile.active { background: rgba(34,85,184,0.3); color: var(--accent); }
-
-@media (max-width: 640px) {
-  .nav-desktop { display: none; }
-  .hamburger { display: block; }
+function tsToISO(ts) {
+  if (!ts) return null
+  if (ts instanceof Timestamp) return ts.toDate().toISOString().split('T')[0]
+  if (ts?.seconds) return new Date(ts.seconds * 1000).toISOString().split('T')[0]
+  return ts
 }
 
-/* ── MAIN ── */
-.main { max-width: 1200px; margin: 0 auto; padding: 28px 20px 60px; }
-
-/* ── PAGE HEADER ── */
-.page-header { margin-bottom: 28px; }
-.page-title { font-size: 26px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
-.page-title span { color: var(--accent); }
-.page-sub { font-size: 13px; color: var(--text-dim); }
-
-/* ── CARDS ── */
-.card {
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 24px;
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(8px);
-}
-.card-title {
-  font-size: 14px; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.06em; color: var(--blue-200);
-  margin-bottom: 18px; display: flex; align-items: center; gap: 8px;
-}
-.card-title::before { content: ''; display: block; width: 3px; height: 14px; background: var(--accent); border-radius: 2px; }
-
-/* ── STAT CARDS ── */
-.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 28px; }
-.stat-card {
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 20px;
-  position: relative; overflow: hidden;
-}
-.stat-card::before {
-  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
-  background: linear-gradient(90deg, var(--accent), var(--accent-2));
-}
-.stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-dim); margin-bottom: 8px; }
-.stat-value { font-size: 24px; font-weight: 700; color: var(--text); font-family: 'IBM Plex Mono', monospace; }
-.stat-unit { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
-
-/* ── FORM ── */
-.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
-.form-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
-.form-group { display: flex; flex-direction: column; gap: 6px; }
-.form-group.full { grid-column: 1 / -1; }
-.form-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--blue-200); }
-.form-input, .form-select {
-  background: rgba(10, 26, 61, 0.8);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 10px 14px;
-  color: var(--text);
-  font-family: 'IBM Plex Sans', sans-serif;
-  font-size: 14px;
-  transition: border-color 0.2s, box-shadow 0.2s;
-  outline: none;
-  width: 100%;
-}
-.form-input:focus, .form-select:focus {
-  border-color: var(--blue-400);
-  box-shadow: 0 0 0 3px rgba(58,114,216,0.2);
-}
-.form-select option { background: var(--blue-800); }
-
-/* ── BUTTONS ── */
-.btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  padding: 10px 20px; border-radius: 7px;
-  font-family: 'IBM Plex Sans', sans-serif; font-size: 13px; font-weight: 600;
-  cursor: pointer; transition: all 0.2s; border: none; text-decoration: none;
-}
-.btn-primary {
-  background: linear-gradient(135deg, var(--blue-500), var(--blue-400));
-  color: #fff; box-shadow: 0 2px 12px rgba(34,85,184,0.4);
-}
-.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(34,85,184,0.5); }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-.btn-success {
-  background: linear-gradient(135deg, #00946b, var(--accent-2));
-  color: #000; box-shadow: 0 2px 12px rgba(0,229,176,0.3);
-}
-.btn-success:hover { transform: translateY(-1px); }
-.btn-danger { background: rgba(255,77,109,0.15); color: var(--danger); border: 1px solid rgba(255,77,109,0.3); }
-.btn-danger:hover { background: rgba(255,77,109,0.25); }
-.btn-ghost { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
-.btn-ghost:hover { background: rgba(255,255,255,0.05); color: var(--text); }
-.btn-sm { padding: 6px 12px; font-size: 12px; }
-
-/* ── ABATIMENTO INFO ── */
-.abatimento-box {
-  background: rgba(0, 195, 255, 0.06);
-  border: 1px solid rgba(0,195,255,0.2);
-  border-radius: 8px;
-  padding: 14px 18px;
-  margin-top: 8px;
-}
-.abatimento-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-.abatimento-row:last-child { margin-bottom: 0; }
-.abatimento-label { font-size: 12px; color: var(--text-dim); }
-.abatimento-value { font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 600; }
-.abatimento-value.highlight { color: var(--accent); }
-.abatimento-badge {
-  display: inline-block; padding: 2px 8px;
-  background: rgba(255,159,64,0.15); color: var(--warn);
-  border-radius: 4px; font-size: 11px; font-weight: 600;
+function tsToDateTime(ts) {
+  if (!ts) return null
+  if (ts?.toDate) return ts.toDate().toISOString()
+  return ts
 }
 
-/* ── TABLE ── */
-.table-wrap { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-thead tr { border-bottom: 1px solid var(--border); }
-th { padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); white-space: nowrap; }
-td { padding: 10px 14px; color: var(--text); border-bottom: 1px solid rgba(60,120,220,0.1); }
-tr:last-child td { border-bottom: none; }
-tr:hover td { background: rgba(34,85,184,0.08); }
-.td-mono { font-family: 'IBM Plex Mono', monospace; }
-.td-right { text-align: right; }
-
-/* ── BADGE ── */
-.badge {
-  display: inline-block; padding: 3px 9px; border-radius: 20px;
-  font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
-}
-.badge-blue { background: rgba(34,85,184,0.25); color: var(--blue-200); }
-.badge-green { background: rgba(0,229,176,0.15); color: var(--accent-2); }
-.badge-warn { background: rgba(255,159,64,0.15); color: var(--warn); }
-.badge-danger { background: rgba(255,77,109,0.15); color: var(--danger); }
-
-/* ── MODAL / OVERLAY ── */
-.modal-overlay {
-  position: fixed; inset: 0; z-index: 200;
-  background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
-  display: flex; align-items: center; justify-content: center; padding: 20px;
-}
-.modal {
-  background: var(--blue-800);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 28px;
-  max-width: 540px; width: 100%;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
-  animation: slideUp 0.25s ease;
-}
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.modal-title { font-size: 18px; font-weight: 700; margin-bottom: 20px; color: var(--text); }
-.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
-
-/* ── TOAST ── */
-.toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 300; display: flex; flex-direction: column; gap: 10px; }
-.toast {
-  background: var(--blue-700); border: 1px solid var(--border);
-  border-radius: 8px; padding: 14px 18px;
-  font-size: 13px; font-weight: 500;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-  animation: toastIn 0.3s ease;
-  max-width: 320px;
-}
-.toast.success { border-color: rgba(0,229,176,0.4); color: var(--accent-2); }
-.toast.error { border-color: rgba(255,77,109,0.4); color: var(--danger); }
-@keyframes toastIn {
-  from { opacity: 0; transform: translateX(20px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-
-/* ── EMPTY STATE ── */
-.empty { text-align: center; padding: 48px 20px; color: var(--text-dim); }
-.empty-icon { font-size: 36px; margin-bottom: 12px; opacity: 0.5; }
-.empty-text { font-size: 14px; }
-
-/* ── LOADING ── */
-.loading { text-align: center; padding: 40px; color: var(--text-dim); }
-.spinner {
-  display: inline-block; width: 28px; height: 28px;
-  border: 3px solid var(--border); border-top-color: var(--accent);
-  border-radius: 50%; animation: spin 0.8s linear infinite;
-  margin-bottom: 10px;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-
-/* ── DIVIDER ── */
-.divider { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
-
-/* ── SECTION TITLE ── */
-.section-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 16px; }
-
-/* ── RESPONSIVE ── */
-@media (max-width: 480px) {
-  .main { padding: 12px 10px 80px; }
-  .page-title { font-size: 20px; }
-  .form-grid { grid-template-columns: 1fr; }
-  .stats-grid { grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
-  .stat-card { padding: 12px 10px; }
-  .stat-value { font-size: 18px; }
-  .modal { padding: 16px; margin: 8px; }
-  .header-inner { padding: 0 10px; }
-}
-
-/* ══════════════════════════════════════════════════════
-   LIGHT THEME
-══════════════════════════════════════════════════════ */
-[data-theme="light"] {
-  --blue-900: #f0f4ff;
-  --blue-800: #e0eaff;
-  --blue-700: #c8d8f8;
-  --blue-600: #a0bef0;
-  --blue-500: #2255b8;
-  --blue-400: #1a3a82;
-  --blue-300: #0f2860;
-  --blue-200: #1a3a82;
-  --blue-100: #0a1a3d;
-  --blue-50:  #050e24;
-  --accent:   #0055cc;
-  --accent-2: #007a5e;
-  --warn:     #b35c00;
-  --danger:   #cc1133;
-  --success:  #007a5e;
-  --text:     #0a1530;
-  --text-dim: #4a6080;
-  --border:   rgba(30, 80, 160, 0.18);
-  --card-bg:  rgba(255, 255, 255, 0.85);
-  --shadow:   0 4px 24px rgba(0,0,0,0.10);
-}
-
-[data-theme="light"] body {
-  background: #eef3ff;
-  background-image:
-    radial-gradient(ellipse at 20% 10%, rgba(180,210,255,0.5) 0%, transparent 60%),
-    radial-gradient(ellipse at 80% 90%, rgba(160,200,240,0.3) 0%, transparent 60%);
-}
-
-[data-theme="light"] .header {
-  background: rgba(240, 246, 255, 0.97);
-  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
-}
-
-[data-theme="light"] .form-input,
-[data-theme="light"] .form-select {
-  background: rgba(255,255,255,0.9);
-  color: var(--text);
-}
-
-[data-theme="light"] .form-select option { background: #fff; color: #0a1530; }
-
-[data-theme="light"] .modal { background: #fff; }
-[data-theme="light"] .toast { background: #fff; color: var(--text); }
-[data-theme="light"] .toast.success { color: var(--accent-2); }
-[data-theme="light"] .toast.error   { color: var(--danger); }
-
-[data-theme="light"] thead tr { border-bottom-color: var(--border); }
-[data-theme="light"] td { color: var(--text); border-bottom-color: rgba(30,80,160,0.07); }
-[data-theme="light"] tr:hover td { background: rgba(34,85,184,0.04); }
-
-[data-theme="light"] .stat-card { background: rgba(255,255,255,0.9); }
-[data-theme="light"] .nav-link { color: var(--text-dim); }
-[data-theme="light"] .nav-link.active { background: rgba(34,85,184,0.12); color: var(--accent); }
-[data-theme="light"] .nav-link-mobile { color: var(--text-dim); }
-[data-theme="light"] .nav-link-mobile.active { background: rgba(34,85,184,0.12); color: var(--accent); }
-
-[data-theme="light"] .btn-ghost { color: var(--text-dim); border-color: var(--border); }
-[data-theme="light"] .btn-ghost:hover { background: rgba(0,0,0,0.04); color: var(--text); }
-
-[data-theme="light"] .abatimento-box { background: rgba(0,85,204,0.05); }
-
-[data-theme="light"] .log-item .log-content { background: rgba(255,255,255,0.9); }
-
-/* ── Login Page ── */
-.login-page {
-  min-height: 100vh;
-  display: flex; align-items: center; justify-content: center;
-  padding: 20px; position: relative; overflow: hidden;
-}
-.login-bg {
-  position: fixed; inset: 0; z-index: 0;
-  background: var(--blue-900);
-  background-image:
-    radial-gradient(ellipse at 15% 20%, rgba(26,80,180,0.3) 0%, transparent 55%),
-    radial-gradient(ellipse at 85% 80%, rgba(0,195,255,0.12) 0%, transparent 55%);
-}
-.login-card {
-  position: relative; z-index: 1;
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  padding: 36px 32px;
-  width: 100%; max-width: 400px;
-  box-shadow: 0 24px 64px rgba(0,0,0,0.5);
-  backdrop-filter: blur(12px);
-  animation: slideUp 0.3s ease;
-}
-.login-brand { text-align: center; margin-bottom: 4px; }
-.login-brand-icon { font-size: 44px; color: var(--accent); line-height: 1; display: block; margin-bottom: 8px; }
-.login-brand-title { font-size: 22px; font-weight: 700; color: var(--text); }
-.login-brand-sub { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
-.login-divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
-.login-form-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 18px; }
-
-.btn-google {
-  display: flex; align-items: center; justify-content: center; gap: 10px;
-  width: 100%; padding: 11px; border-radius: 8px;
-  background: var(--card-bg); border: 1px solid var(--border);
-  color: var(--text); font-family: 'IBM Plex Sans', sans-serif;
-  font-size: 14px; font-weight: 500; cursor: pointer;
-  transition: all 0.2s; margin-bottom: 16px;
-}
-.btn-google:hover { background: rgba(255,255,255,0.08); transform: translateY(-1px); }
-.btn-google:disabled { opacity: 0.5; cursor: not-allowed; }
-
-.login-or {
-  display: flex; align-items: center; gap: 10px;
-  font-size: 12px; color: var(--text-dim); margin-bottom: 16px;
-}
-.login-or::before, .login-or::after {
-  content: ''; flex: 1; height: 1px; background: var(--border);
-}
-.login-error {
-  background: rgba(255,77,109,0.1); border: 1px solid rgba(255,77,109,0.3);
-  color: var(--danger); border-radius: 6px; padding: 8px 12px;
-  font-size: 13px; margin-bottom: 12px;
-}
-.login-switch {
-  text-align: center; margin-top: 16px; font-size: 13px; color: var(--text-dim);
-}
-.login-switch button {
-  background: none; border: none; color: var(--accent);
-  cursor: pointer; font-size: 13px; font-weight: 600; margin-left: 6px;
-}
-.login-switch button:hover { text-decoration: underline; }
-
-/* ── Theme toggle button ── */
-.btn-theme-icon {
-  background: rgba(255,255,255,0.08); border: 1px solid var(--border);
-  border-radius: 6px; padding: 5px 9px; cursor: pointer;
-  font-size: 15px; color: var(--text); transition: all 0.2s;
-}
-.btn-theme-icon:hover { background: rgba(255,255,255,0.14); }
-
-/* ── User chip ── */
-.user-chip {
-  width: 30px; height: 30px; border-radius: 50%;
-  background: rgba(34,85,184,0.3); border: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: 13px; color: var(--accent);
-  overflow: hidden;
-}
-
-/* ── Theme toggle switch ── */
-.theme-toggle {
-  display: flex; align-items: center; gap: 10px;
-  background: none; border: none; cursor: pointer; padding: 6px 0;
-}
-.theme-toggle-track {
-  width: 44px; height: 24px; border-radius: 12px;
-  background: var(--border); display: block; position: relative;
-  border: 1px solid var(--border);
-}
-.theme-toggle-thumb {
-  position: absolute; top: 3px; left: 3px;
-  width: 16px; height: 16px; border-radius: 50%;
-  background: var(--accent); transition: transform 0.25s ease;
-  display: block;
-}
-.theme-toggle-icon { font-size: 18px; }
-
-/* ── Progress bar ── */
-.progress-bar-bg {
-  height: 8px; border-radius: 4px;
-  background: rgba(255,255,255,0.08);
-  overflow: hidden;
-}
-.progress-bar-fill {
-  height: 100%; border-radius: 4px;
-  transition: width 0.5s ease;
-}
-
-/* ── Log timeline ── */
-.log-timeline { display: flex; flex-direction: column; gap: 0; }
-.log-item {
-  display: flex; gap: 16px; position: relative;
-  padding-bottom: 20px;
-}
-.log-dot {
-  width: 32px; height: 32px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  flex-shrink: 0; font-weight: 700; z-index: 1;
-  background: var(--blue-700);
-}
-.log-line {
-  position: absolute; left: 15px; top: 32px;
-  width: 2px; bottom: 0;
-  background: var(--border);
-}
-.log-content {
-  flex: 1; background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 8px; padding: 10px 14px;
-}
-.log-header {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 6px; flex-wrap: wrap; gap: 6px;
-}
-.log-badge {
-  display: inline-block; padding: 2px 10px; border-radius: 20px;
-  font-size: 11px; font-weight: 600;
-}
-.log-time { font-size: 11px; color: var(--text-dim); font-family: 'IBM Plex Mono', monospace; }
-.log-desc { font-size: 13px; color: var(--text); margin-bottom: 4px; font-weight: 500; }
-.log-user { font-size: 11px; color: var(--text-dim); display: flex; align-items: center; gap: 5px; }
-.log-user-icon { font-size: 11px; }
-
-/* ── Logo upload ── */
-.logo-preview-box {
-  width: 140px; height: 80px;
-  border: 2px dashed var(--border); border-radius: 8px;
-  display: flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: border-color 0.2s; padding: 8px;
-  background: rgba(255,255,255,0.03);
-}
-.logo-preview-box:hover { border-color: var(--accent); }
-
-/* ── Lote Cards (Dashboard) ── */
-.lote-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 16px;
-}
-
-.lote-card {
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 18px 20px 14px;
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(8px);
-  transition: border-color 0.2s;
-}
-.lote-card:hover { border-color: rgba(0,195,255,0.25); }
-
-.lote-card-header {
-  display: flex; justify-content: space-between; align-items: flex-start;
-  cursor: pointer; gap: 12px;
-}
-
-.lote-card-title {
-  font-size: 15px; font-weight: 700; color: var(--text);
-  font-family: 'IBM Plex Mono', monospace;
-}
-.lote-card-sub { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
-
-.lote-card-kg {
-  font-size: 18px; font-weight: 700;
-  font-family: 'IBM Plex Mono', monospace;
-}
-
-.lote-nf-list {
-  border-top: 1px solid var(--border);
-  margin-top: 8px; padding-top: 8px;
-  display: flex; flex-direction: column; gap: 6px;
-}
-.lote-nf-row {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 6px 10px; border-radius: 6px;
-  background: rgba(255,255,255,0.03);
-  transition: background 0.15s;
-}
-.lote-nf-row:hover { background: rgba(34,85,184,0.1); }
-
-.lote-expand-btn {
-  display: block; width: 100%; margin-top: 10px;
-  background: none; border: none;
-  color: var(--text-dim); font-size: 11px; font-weight: 500;
-  cursor: pointer; padding: 4px 0;
-  transition: color 0.2s;
-  text-align: center;
-  letter-spacing: 0.04em;
-}
-.lote-expand-btn:hover { color: var(--accent); }
-
-/* ── PDF Dropzone (EntradaPage) ── */
-.pdf-dropzone {
-  border: 2px dashed var(--border);
-  border-radius: 10px;
-  padding: 20px;
-  cursor: pointer;
-  transition: border-color 0.2s, background 0.2s;
-  display: flex; align-items: center; justify-content: center;
-  min-height: 80px;
-  background: rgba(0,195,255,0.02);
-}
-.pdf-dropzone:hover,
-.pdf-dropzone.drag-over {
-  border-color: var(--accent);
-  background: rgba(0,195,255,0.06);
-}
-
-/* ── Responsive dashboard grid ── */
-@media (max-width: 700px) {
-  .lote-grid { grid-template-columns: 1fr; }
-}
-
-/* ── Dashboard 4-area named grid ── */
-/*
-  Layout:
-  [ A: NFs Recentes     ] [ B: Últimas Saídas  ]
-  [ C: Entradas p/ Lote ] [ D: Saídas p/ Lote  ]
-
-  Linha 1: ambas as células têm a mesma altura (auto = cresce com o maior)
-  Linha 2: idem
-*/
-.dash-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: auto auto;
-  gap: 20px;
-  align-items: stretch;   /* força ambas as células de cada linha à mesma altura */
-}
-.dash-grid-a { grid-area: 1 / 1; display: flex; flex-direction: column; }
-.dash-grid-b { grid-area: 1 / 2; display: flex; flex-direction: column; }
-.dash-grid-c { grid-area: 2 / 1; }
-.dash-grid-d { grid-area: 2 / 2; }
-
-/* fallback: remove as antigas classes */
-.dashboard-cols { display: none; }
-.dashboard-col  { display: contents; }
-.dash-table-card { /* não usada mais */ }
-
-@media (max-width: 860px) {
-  .dash-grid {
-    grid-template-columns: 1fr;
-  }
-  .dash-grid-a, .dash-grid-b, .dash-grid-c, .dash-grid-d {
-    grid-column: 1; grid-row: auto;
+function docToObj(snap) {
+  const d = snap.data()
+  return {
+    id: snap.id, ...d,
+    data_emissao:  tsToISO(d.data_emissao),
+    criado_em:     tsToDateTime(d.criado_em),
+    atualizado_em: tsToDateTime(d.atualizado_em),
   }
 }
-.card-title-standalone {
-  font-size: 14px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.06em;
-  color: var(--blue-200); margin: 16px 0 10px;
-  display: flex; align-items: center; gap: 8px;
-}
-.card-title-standalone::before {
-  content: ''; display: block; width: 3px; height: 14px;
-  background: var(--accent); border-radius: 2px;
-}
-.lote-col-stack {
-  display: flex; flex-direction: column; gap: 12px;
-}
-@media (max-width: 860px) {
-  .dashboard-cols { grid-template-columns: 1fr; }
-}
 
-/* ── Unidade Selector (header) ── */
-.unidade-selector-wrap {
-  display: flex; align-items: center; gap: 6px;
-  background: rgba(255,255,255,0.07);
-  border: 1px solid var(--border);
-  border-radius: 7px; padding: 4px 10px;
-  cursor: pointer;
-}
-.unidade-select {
-  background: transparent; border: none; outline: none;
-  color: var(--text); font-family: 'IBM Plex Sans', sans-serif;
-  font-size: 12px; font-weight: 500; cursor: pointer;
-  max-width: 160px;
-}
-.unidade-select option { background: var(--blue-800); color: var(--text); }
+// ─────────────────────────────────────────────────────────────────
+// LOG DE AÇÕES
+// ─────────────────────────────────────────────────────────────────
 
-.unidade-badge {
-  display: flex; align-items: center; gap: 6px;
-  background: rgba(0,195,255,0.08);
-  border: 1px solid rgba(0,195,255,0.2);
-  border-radius: 7px; padding: 4px 10px;
-  font-size: 12px; font-weight: 500; color: var(--accent);
-}
-.unidade-icon { font-size: 14px; }
-
-[data-theme="light"] .unidade-selector-wrap { background: rgba(0,0,0,0.04); }
-[data-theme="light"] .unidade-select { color: var(--text); }
-[data-theme="light"] .unidade-select option { background: #fff; }
-
-/* ── Divider interno de card (Dashboard) ── */
-.dash-section-divider {
-  display: flex; align-items: center; gap: 10px;
-  font-size: 11px; font-weight: 700; letter-spacing: 0.07em;
-  text-transform: uppercase; color: var(--blue-200);
-  margin: 20px 0 12px;
-}
-.dash-section-divider::before {
-  content: ''; flex: none; width: 3px; height: 13px;
-  background: var(--accent); border-radius: 2px;
-}
-.dash-section-divider::after {
-  content: ''; flex: 1; height: 1px; background: var(--border);
+export async function registrarLog(acao, descricao, usuario) {
+  try {
+    await addDoc(collection(db, 'log_acoes'), {
+      acao, descricao,
+      usuario_email: usuario?.email || 'desconhecido',
+      usuario_nome:  usuario?.displayName || usuario?.email || 'desconhecido',
+      criado_em:     Timestamp.now(),
+    })
+  } catch (_) {}
 }
 
-/* ── 4-col responsive ── */
-@media (max-width: 1100px) { .form-grid-4 { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 600px)  { .form-grid-4 { grid-template-columns: 1fr; } }
+export async function listarLogs() {
+  const snap = await getDocs(query(collection(db, 'log_acoes'), orderBy('criado_em', 'desc')))
+  return snap.docs.map(d => ({ id: d.id, ...d.data(), criado_em: tsToDateTime(d.data().criado_em) }))
+}
 
-/* ── Mobile Layout ─────────────────────────────────────── */
-@media (max-width: 640px) {
-  .nav { padding: 0 12px; gap: 0; overflow-x: auto; }
-  .nav-brand { min-width: 100px; }
-  .nav-link { font-size: 11px; padding: 0 8px; white-space: nowrap; }
-  .nav-link span { display: none; } /* esconde texto, mostra só ícone */
+// ─────────────────────────────────────────────────────────────────
+// CONFIGURAÇÕES
+// ─────────────────────────────────────────────────────────────────
 
-  .page-header { padding: 12px 0 8px; }
-  .page-title  { font-size: 20px; }
+export async function salvarConfig(payload) {
+  await setDoc(doc(db, 'config', 'app'), payload, { merge: true })
+}
 
-  .stats-grid  { grid-template-columns: 1fr 1fr; gap: 10px; }
-  .stat-card   { padding: 12px; }
-  .stat-value  { font-size: 20px; }
+export async function carregarConfig() {
+  const snap = await getDoc(doc(db, 'config', 'app'))
+  return snap.exists() ? snap.data() : {}
+}
 
-  .dash-grid   { grid-template-columns: 1fr; }
+// ─────────────────────────────────────────────────────────────────
+// NF ENTRADA — CRUD + EDIÇÃO
+// ─────────────────────────────────────────────────────────────────
 
-  .form-grid-4 { grid-template-columns: 1fr 1fr !important; }
-  @media (max-width: 420px) {
-    .form-grid-4 { grid-template-columns: 1fr !important; }
+export async function listarNFsEntrada(unidadeId = '') {
+  const snap = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
+  const todos = snap.docs.map(docToObj)
+  // Filtra por unidade se informada; docs sem unidade_id pertencem à raiz (sem unidade)
+  if (!unidadeId) return todos
+  return todos.filter(nf => (nf.unidade_id || '') === unidadeId)
+}
+
+export async function criarNFEntrada(payload, usuario) {
+  const now = Timestamp.now()
+  const docRef = await addDoc(collection(db, 'nf_entrada'), {
+    numero_nf:       payload.numero_nf,
+    data_emissao:    Timestamp.fromDate(new Date(payload.data_emissao + 'T12:00:00')),
+    codigo_material: payload.codigo_material,
+    lote:            payload.lote,
+    volume_kg:       payload.volume_kg,
+    volume_saldo_kg: payload.volume_kg,
+    valor_unitario:  payload.valor_unitario,
+    unidade_id:      payload.unidade_id || '',
+    criado_em:       now,
+    atualizado_em:   now,
+  })
+  await registrarLog('NF_ENTRADA_CRIADA', `NF ${payload.numero_nf} — ${payload.volume_kg} kg`, usuario)
+  const snap = await getDoc(docRef)
+  return docToObj(snap)
+}
+
+export async function editarNFEntrada(id, payload, usuario) {
+  const now = Timestamp.now()
+  // Calcula novo saldo: ajusta proporcionalmente se volume mudou
+  const snapAtual = await getDoc(doc(db, 'nf_entrada', id))
+  if (!snapAtual.exists()) throw new Error('NF não encontrada.')
+  const atual = snapAtual.data()
+  const consumido = Number(atual.volume_kg) - Number(atual.volume_saldo_kg)
+  const novoSaldo = Math.max(0, payload.volume_kg - consumido)
+
+  await updateDoc(doc(db, 'nf_entrada', id), {
+    numero_nf:       payload.numero_nf,
+    data_emissao:    Timestamp.fromDate(new Date(payload.data_emissao + 'T12:00:00')),
+    codigo_material: payload.codigo_material,
+    lote:            payload.lote,
+    volume_kg:       payload.volume_kg,
+    volume_saldo_kg: novoSaldo,
+    valor_unitario:  payload.valor_unitario,
+    unidade_id:      payload.unidade_id || '',
+    atualizado_em:   now,
+  })
+  await registrarLog('NF_ENTRADA_EDITADA', `NF ${payload.numero_nf} atualizada`, usuario)
+}
+
+export async function deletarNFEntrada(id, numeroNF, usuario) {
+  await deleteDoc(doc(db, 'nf_entrada', id))
+  await registrarLog('NF_ENTRADA_REMOVIDA', `NF ${numeroNF} removida`, usuario)
+}
+
+export async function buscarAlocacoesPorNF(nfId) {
+  // Sem orderBy para evitar necessidade de índice composto no Firestore
+  const alocSnap = await getDocs(
+    query(collection(db, 'alocacao_saida'), where('nf_entrada_id', '==', nfId))
+  )
+  if (alocSnap.empty) return []
+  const saidaIds = [...new Set(alocSnap.docs.map(d => d.data().saida_id))]
+  const saidasMap = {}
+  await Promise.all(saidaIds.map(async (sid) => {
+    const sSnap = await getDoc(doc(db, 'saida', sid))
+    if (sSnap.exists()) {
+      const d = sSnap.data()
+      saidasMap[sid] = { id: sSnap.id, ...d, criado_em: tsToDateTime(d.criado_em) }
+    }
+  }))
+  // Ordenar por criado_em em memória
+  const results = alocSnap.docs.map(d => {
+    const aloc = d.data()
+    return { id: d.id, ...aloc, criado_em: tsToDateTime(aloc.criado_em), saida: saidasMap[aloc.saida_id] || null }
+  })
+  return results.sort((a, b) => (a.criado_em || '').localeCompare(b.criado_em || ''))
+}
+
+// ─────────────────────────────────────────────────────────────────
+// EXTRAÇÃO DE DADOS DA NF PDF (via Claude API)
+// ─────────────────────────────────────────────────────────────────
+
+// Extrai texto do PDF usando pdfjs-dist (roda no browser, sem CORS)
+async function extrairTextoPDF(base64Data) {
+  // Importação dinâmica para não aumentar o bundle inicial
+  const pdfjsLib = await import('pdfjs-dist')
+  // Worker inline via CDN — evita problema de configuração do Vite
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
+
+  const raw      = atob(base64Data)
+  const uint8    = new Uint8Array(raw.length)
+  for (let i = 0; i < raw.length; i++) uint8[i] = raw.charCodeAt(i)
+
+  const pdf   = await pdfjsLib.getDocument({ data: uint8 }).promise
+  let   texto = ''
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page    = await pdf.getPage(p)
+    const content = await page.getTextContent()
+    texto += content.items.map(i => i.str).join(' ') + '\n'
+  }
+  return texto
+}
+
+// Envia texto ao proxy Vercel → OpenRouter (arcee-ai/trinity-large-preview:free)
+export async function extrairDadosNFdoPDF(base64Data) {
+  const pdfText = await extrairTextoPDF(base64Data)
+
+  const response = await fetch('/api/extract-nf', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pdfText })
+  })
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}))
+    throw new Error(err.error || `Erro ${response.status} ao extrair NF.`)
+  }
+  const dados = await response.json()
+
+  // Normaliza lote: usa apenas os 4 primeiros dígitos (ex: "53274S" → "5327")
+  if (dados.lote) {
+    dados.lote = String(dados.lote).replace(/\D/g, '').substring(0, 4)
   }
 
-  .table-wrap  { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-  table        { min-width: 520px; }
-
-  .card        { padding: 14px 12px; }
-  .modal       { margin: 12px; padding: 16px; max-width: calc(100vw - 24px) !important; }
-
-  /* Header compacto mobile */
-  .nav-unit-selector { display: none; }
+  return dados
 }
 
-/* ── PWA Install Banner ────────────────────────────────── */
-.pwa-install-banner {
-  position: fixed;
-  bottom: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--card-bg);
-  border: 1px solid var(--accent);
-  border-radius: 12px;
-  padding: 12px 20px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
-  z-index: 9999;
-  max-width: 360px;
-  width: calc(100vw - 32px);
-  animation: slideUp 0.3s ease;
+// ─────────────────────────────────────────────────────────────────
+// PREVIEW FIFO (sem gravar — usado para confirmação)
+// ─────────────────────────────────────────────────────────────────
+
+export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unidadeId = '' } = {}) {
+  const snap = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
+  const nfsComSaldo = snap.docs.map(docToObj).filter(nf => {
+    if (Number(nf.volume_saldo_kg) <= 0.001) return false
+    // Filtra por unidade
+    if (unidadeId && (nf.unidade_id || '') !== unidadeId) return false
+    // Filtra por código do material
+    if (codigoMaterial && nf.codigo_material !== codigoMaterial) return false
+    // Filtra por lote POY (compara os 4 primeiros dígitos)
+    if (lotePoy) {
+      const loteNF   = String(nf.lote || '').substring(0, 4)
+      const loteSaida = String(lotePoy).substring(0, 4)
+      if (loteNF !== loteSaida) return false
+    }
+    return true
+  })
+
+  let restante = volumeAbatido
+  const preview = []
+  for (const nf of nfsComSaldo) {
+    if (restante <= 0) break
+    const alocar = Math.min(Number(nf.volume_saldo_kg), restante)
+    preview.push({ numero_nf: nf.numero_nf, data_emissao: nf.data_emissao, saldo_atual: nf.volume_saldo_kg, volume_alocado_kg: alocar })
+    restante -= alocar
+  }
+  return { preview, saldoInsuficiente: restante > 0.01, faltando: restante }
 }
-.pwa-install-banner .pwa-text { flex: 1; font-size: 13px; }
-.pwa-install-banner .pwa-text strong { color: var(--accent); display: block; }
-.pwa-install-banner .pwa-text span { color: var(--text-dim); font-size: 11px; }
-@keyframes slideUp {
-  from { opacity: 0; transform: translateX(-50%) translateY(20px); }
-  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+// ─────────────────────────────────────────────────────────────────
+// SAÍDA COM ALOCAÇÃO FIFO
+// ─────────────────────────────────────────────────────────────────
+
+export async function criarSaida(payload, usuario) {
+  const {
+    romaneio_microdata, codigo_material, lote_poy, lote_acabado,
+    tipo_saida, volume_liquido_kg, volume_bruto_kg, quantidade,
+    unidade_id = ''
+  } = payload
+
+  const temAbatimento       = TIPOS_COM_ABATIMENTO.includes(tipo_saida)
+  const volume_abatido_kg   = calcularVolumeAbatido(volume_liquido_kg, tipo_saida)
+  const percentual_abatimento = temAbatimento ? PERCENTUAL_ABATIMENTO : 0
+
+  const snap = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
+  const nfsComSaldo = snap.docs.map(docToObj).filter(nf => {
+    if (Number(nf.volume_saldo_kg) <= 0.001) return false
+    if (unidade_id && (nf.unidade_id || '') !== unidade_id) return false
+    if (codigo_material && nf.codigo_material !== codigo_material) return false
+    if (lote_poy) {
+      const loteNF    = String(nf.lote || '').substring(0, 4)
+      const loteSaida = String(lote_poy).substring(0, 4)
+      if (loteNF !== loteSaida) return false
+    }
+    return true
+  })
+
+  let volumeRestante = volume_abatido_kg
+  const alocacoes = []
+  for (const nf of nfsComSaldo) {
+    if (volumeRestante <= 0) break
+    const alocar = Math.min(Number(nf.volume_saldo_kg), volumeRestante)
+    alocacoes.push({ nf_entrada_id: nf.id, numero_nf: nf.numero_nf, data_emissao: nf.data_emissao, volume_alocado_kg: alocar })
+    volumeRestante -= alocar
+  }
+
+  if (volumeRestante > 0.01) {
+    const saldoDisp = nfsComSaldo.reduce((a, n) => a + Number(n.volume_saldo_kg), 0)
+    if (saldoDisp <= 0) {
+      throw new Error(`Não há NFs com saldo para o material "${codigo_material}" / lote "${lote_poy}" nesta unidade.`)
+    }
+    throw new Error(`Saldo insuficiente. Disponível: ${saldoDisp.toFixed(4)} kg — Solicitado: ${volume_abatido_kg.toFixed(4)} kg.`)
+  }
+
+  const now      = Timestamp.now()
+  const batch    = writeBatch(db)
+  const saidaRef = doc(collection(db, 'saida'))
+
+  batch.set(saidaRef, {
+    romaneio_microdata,
+    codigo_material,            // campo padronizado (era codigo_produto)
+    codigo_produto: codigo_material, // mantém retrocompatibilidade
+    lote_poy,
+    lote_acabado:   lote_acabado || '',
+    tipo_saida,
+    volume_liquido_kg,
+    volume_bruto_kg:  volume_bruto_kg || null,
+    quantidade:       quantidade || null,
+    volume_abatido_kg,
+    percentual_abatimento,
+    unidade_id,
+    usuario_email: usuario?.email || '',
+    criado_em: now,
+  })
+
+  const alocacoesRetorno = []
+  for (const aloc of alocacoes) {
+    const alocRef  = doc(collection(db, 'alocacao_saida'))
+    const alocData = {
+      saida_id: saidaRef.id, nf_entrada_id: aloc.nf_entrada_id,
+      numero_nf: aloc.numero_nf, data_emissao: aloc.data_emissao,
+      volume_alocado_kg: aloc.volume_alocado_kg, criado_em: now
+    }
+    batch.set(alocRef, alocData)
+    alocacoesRetorno.push({ id: alocRef.id, ...alocData })
+  }
+
+  for (const aloc of alocacoes) {
+    const nfOrig    = nfsComSaldo.find(n => n.id === aloc.nf_entrada_id)
+    const novoSaldo = Number(nfOrig.volume_saldo_kg) - aloc.volume_alocado_kg
+    batch.update(doc(db, 'nf_entrada', aloc.nf_entrada_id), { volume_saldo_kg: novoSaldo, atualizado_em: now })
+  }
+
+  await batch.commit()
+  await registrarLog(
+    'SAIDA_REGISTRADA',
+    `Romaneio ${romaneio_microdata} — ${volume_abatido_kg.toFixed(4)} kg (${TIPOS_SAIDA.find(t=>t.value===tipo_saida)?.label}) | ${codigo_material} / Lote ${lote_poy}`,
+    usuario
+  )
+
+  return {
+    saida: {
+      id: saidaRef.id, romaneio_microdata, codigo_material, lote_poy, lote_acabado,
+      tipo_saida, volume_liquido_kg, volume_bruto_kg, quantidade,
+      volume_abatido_kg, percentual_abatimento, unidade_id,
+      criado_em: now.toDate().toISOString()
+    },
+    alocacoes: alocacoesRetorno,
+  }
 }
+
+export async function listarSaidas(unidadeId = '') {
+  const [saidasSnap, alocSnap] = await Promise.all([
+    getDocs(query(collection(db, 'saida'), orderBy('criado_em', 'desc'))),
+    getDocs(collection(db, 'alocacao_saida')),
+  ])
+  const alocPorSaida = {}
+  alocSnap.docs.forEach(d => {
+    const data = d.data()
+    if (!alocPorSaida[data.saida_id]) alocPorSaida[data.saida_id] = []
+    alocPorSaida[data.saida_id].push({ id: d.id, ...data })
+  })
+  const todas = saidasSnap.docs.map(d => {
+    const data = d.data()
+    return {
+      id: d.id, ...data,
+      codigo_material: data.codigo_material || data.codigo_produto || '',
+      criado_em: tsToDateTime(d.data().criado_em),
+      alocacao_saida: alocPorSaida[d.id] || []
+    }
+  })
+  if (!unidadeId) return todas
+  return todas.filter(s => (s.unidade_id || '') === unidadeId)
+}
+
+// Exclui uma saída e estorna o saldo nas NFs de entrada
+export async function deletarSaida(saidaId, usuario) {
+  // Busca alocações desta saída para estornar
+  const alocSnap = await getDocs(
+    query(collection(db, 'alocacao_saida'), where('saida_id', '==', saidaId))
+  )
+  const saidaSnap = await getDoc(doc(db, 'saida', saidaId))
+  if (!saidaSnap.exists()) throw new Error('Saída não encontrada.')
+  const saida = saidaSnap.data()
+
+  const batch = writeBatch(db)
+  const now   = Timestamp.now()
+
+  // Estorna saldo em cada NF alocada
+  for (const alocDoc of alocSnap.docs) {
+    const aloc   = alocDoc.data()
+    const nfSnap = await getDoc(doc(db, 'nf_entrada', aloc.nf_entrada_id))
+    if (nfSnap.exists()) {
+      const saldoAtual  = Number(nfSnap.data().volume_saldo_kg || 0)
+      const novoSaldo   = saldoAtual + Number(aloc.volume_alocado_kg)
+      batch.update(doc(db, 'nf_entrada', aloc.nf_entrada_id), { volume_saldo_kg: novoSaldo, atualizado_em: now })
+    }
+    batch.delete(doc(db, 'alocacao_saida', alocDoc.id))
+  }
+
+  batch.delete(doc(db, 'saida', saidaId))
+  await batch.commit()
+  await registrarLog('SAIDA_EXCLUIDA', `Romaneio ${saida.romaneio_microdata} excluído — saldo estornado`, usuario)
+}
+
+// Verifica se número de NF já existe em qualquer unidade
+export async function verificarNFDuplicada(numeroNF) {
+  const snap = await getDocs(query(collection(db, 'nf_entrada'), where('numero_nf', '==', String(numeroNF).trim())))
+  if (snap.empty) return null
+  const nf = snap.docs[0].data()
+  return { existe: true, unidade_id: nf.unidade_id || '' }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// EXPORTAÇÃO EXCEL (.xlsx)
+// ─────────────────────────────────────────────────────────────────
+
+function tipoLabel(v) { return TIPOS_SAIDA.find(t => t.value === v)?.label || v }
+function fmtNum(n, dec = 4) { return n != null ? Number(n).toFixed(dec).replace('.', ',') : '' }
+function fmtDate(d) { try { return format(new Date(d), 'dd/MM/yyyy') } catch { return '' } }
+function fmtDateTime(d) { try { return format(new Date(d), 'dd/MM/yyyy HH:mm') } catch { return '' } }
+
+export function exportarExcel(nfs, saidas) {
+  const wb = XLSX.utils.book_new()
+
+  // Aba 1: NFs de Entrada
+  const nfRows = nfs.map(nf => ({
+    'Número NF':        nf.numero_nf,
+    'Data Emissão':     fmtDate(nf.data_emissao),
+    'Cód. Material':    nf.codigo_material,
+    'Lote POY':         nf.lote,
+    'Volume Total (kg)': fmtNum(nf.volume_kg),
+    'Saldo (kg)':       fmtNum(nf.volume_saldo_kg),
+    'Consumido (kg)':   fmtNum(Number(nf.volume_kg) - Number(nf.volume_saldo_kg)),
+    'V. Unitário (R$)': fmtNum(nf.valor_unitario, 6),
+    'Valor Total (R$)': fmtNum(Number(nf.volume_kg) * Number(nf.valor_unitario), 2),
+    'Status':           Number(nf.volume_saldo_kg) <= 0.01 ? 'Zerada' : 'Ativa',
+  }))
+  const wsNF = XLSX.utils.json_to_sheet(nfRows)
+  wsNF['!cols'] = [14,12,14,12,16,12,14,16,14,8].map(w => ({ wch: w }))
+  XLSX.utils.book_append_sheet(wb, wsNF, 'NFs Entrada')
+
+  // Aba 2: Saídas
+  const saidaRows = saidas.map(s => ({
+    'Romaneio Microdata': s.romaneio_microdata,
+    'Cód. Produto':       s.codigo_produto,
+    'Lote POY':           s.lote_poy || s.lote_produto || '',
+    'Lote Acabado':       s.lote_acabado || '',
+    'Tipo Saída':         tipoLabel(s.tipo_saida),
+    'Vol. Líquido (kg)':  fmtNum(s.volume_liquido_kg || s.volume_bruto_kg),
+    'Vol. Bruto (kg)':    fmtNum(s.volume_bruto_kg),
+    'Quantidade':         s.quantidade || '',
+    'Vol. Final (kg)':    fmtNum(s.volume_abatido_kg),
+    'Abatimento':         TIPOS_COM_ABATIMENTO.includes(s.tipo_saida) ? '1,5%' : '0%',
+    'Data/Hora':          fmtDateTime(s.criado_em),
+    'Usuário':            s.usuario_email || '',
+    'NFs Abatidas':       (s.alocacao_saida || []).map(a => `NF ${a.numero_nf}: ${fmtNum(a.volume_alocado_kg)} kg`).join(' | '),
+  }))
+  const wsSaida = XLSX.utils.json_to_sheet(saidaRows)
+  wsSaida['!cols'] = [16,12,12,12,22,14,12,10,14,10,16,22,50].map(w => ({ wch: w }))
+  XLSX.utils.book_append_sheet(wb, wsSaida, 'Saídas')
+
+  // Aba 3: Alocações FIFO
+  const alocRows = []
+  saidas.forEach(s => {
+    ;(s.alocacao_saida || []).forEach(a => {
+      alocRows.push({
+        'Romaneio':             s.romaneio_microdata,
+        'Tipo Saída':           tipoLabel(s.tipo_saida),
+        'NF Entrada':           a.numero_nf,
+        'Emissão NF':           fmtDate(a.data_emissao),
+        'Volume Alocado (kg)':  fmtNum(a.volume_alocado_kg),
+        'Data Saída':           fmtDateTime(s.criado_em),
+      })
+    })
+  })
+  const wsAloc = XLSX.utils.json_to_sheet(alocRows)
+  wsAloc['!cols'] = [16,22,12,12,18,16].map(w => ({ wch: w }))
+  XLSX.utils.book_append_sheet(wb, wsAloc, 'Alocações FIFO')
+
+  const ts = format(new Date(), 'yyyyMMdd_HHmm')
+  XLSX.writeFile(wb, `faconagem_rhodia_${ts}.xlsx`)
+}
+
+// ─────────────────────────────────────────────────────────────────
+// ROMANEIO PDF (com logo)
+// ─────────────────────────────────────────────────────────────────
+
+export function gerarRomaneioPDF(saida, alocacoes, config = {}) {
+  const pdoc  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const W     = 210
+  const DARK  = [15, 40, 80]
+  const MED   = [26, 80, 150]
+  const LIGHT = [220, 235, 255]
+  const WHITE = [255, 255, 255]
+  const GRAY  = [80, 80, 80]
+
+  const tipoLbl = TIPOS_SAIDA.find(t => t.value === saida.tipo_saida)?.label || saida.tipo_saida
+  const temAbat = TIPOS_COM_ABATIMENTO.includes(saida.tipo_saida)
+  const fmtKg   = n => n != null ? Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 }) + ' kg' : '—'
+  const codigoMaterial = saida.codigo_material || saida.codigo_produto || '—'
+
+  // ── Cabeçalho ──────────────────────────────────────────
+  const headerH = 36
+  pdoc.setFillColor(...DARK)
+  pdoc.rect(0, 0, W, headerH, 'F')
+
+  if (config.logoBase64) {
+    try { pdoc.addImage(config.logoBase64, 'PNG', 14, 5, 26, 26) } catch (_) {}
+  }
+
+  pdoc.setTextColor(...WHITE)
+  pdoc.setFontSize(16); pdoc.setFont('helvetica', 'bold')
+  pdoc.text('RHODIA FAÇONAGEM', W / 2, 13, { align: 'center' })
+  pdoc.setFontSize(10); pdoc.setFont('helvetica', 'normal')
+  pdoc.text('ROMANEIO DE SAÍDA', W / 2, 21, { align: 'center' })
+  pdoc.setFontSize(8)
+  pdoc.text(`Emitido: ${format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}`, W / 2, 29, { align: 'center' })
+
+  let y = headerH + 8
+
+  // ── Dados do Romaneio ──────────────────────────────────
+  // Calcula altura do box dinamicamente
+  const hasOpcional = !!(saida.lote_acabado || saida.quantidade)
+  const boxH = 14 + 14 + 14 + (hasOpcional ? 14 : 0)
+  pdoc.setFillColor(...LIGHT)
+  pdoc.roundedRect(14, y, W - 28, boxH, 3, 3, 'F')
+
+  const linha = (lbl, val, cx, cy) => {
+    pdoc.setFont('helvetica', 'bold'); pdoc.setFontSize(8); pdoc.setTextColor(...GRAY)
+    pdoc.text(lbl, cx, cy)
+    pdoc.setFont('helvetica', 'normal'); pdoc.setTextColor(...DARK)
+    pdoc.text(String(val ?? '—'), cx, cy + 5)
+  }
+
+  const col1 = 20, col2 = W / 2 + 4
+  y += 7
+  linha('Romaneio Microdata',    saida.romaneio_microdata,  col1, y)
+  linha('Código do Material',    codigoMaterial,            col2, y)
+  y += 14
+  linha('Lote POY',              saida.lote_poy || '—',     col1, y)
+  linha('Tipo de Saída',         tipoLbl,                   col2, y)
+  y += 14
+  if (saida.lote_acabado || saida.quantidade) {
+    if (saida.lote_acabado) linha('Lote Acabado', saida.lote_acabado, col1, y)
+    if (saida.quantidade)   linha('Quantidade',   saida.quantidade,  col2, y)
+    y += 14
+  }
+
+  y += 4  // padding após o box
+
+  // ── Box de Volumes ─────────────────────────────────────
+  const hasVolBruto = !!(saida.volume_bruto_kg && saida.volume_bruto_kg !== saida.volume_liquido_kg)
+  const volBoxH = 7 + 14 + (hasVolBruto ? 0 : 0) + (temAbat ? 16 : 12)
+  pdoc.setFillColor(240, 246, 255)
+  pdoc.roundedRect(14, y, W - 28, volBoxH, 3, 3, 'F')
+  y += 7
+
+  linha('Volume Líquido',
+    fmtKg(saida.volume_liquido_kg || saida.volume_bruto_kg), col1, y)
+
+  if (saida.volume_bruto_kg && saida.volume_bruto_kg !== saida.volume_liquido_kg) {
+    linha('Volume Bruto', fmtKg(saida.volume_bruto_kg), col2, y)
+  }
+  y += 14
+
+  if (temAbat) {
+    pdoc.setFont('helvetica', 'bold'); pdoc.setFontSize(9); pdoc.setTextColor(...DARK)
+    pdoc.text('Volume a Debitar do Estoque (com abat. 1,5%):', col1, y)
+    pdoc.setTextColor(...MED)
+    pdoc.text(fmtKg(saida.volume_abatido_kg), col1 + 88, y)
+    y += 12
+  } else {
+    pdoc.setFont('helvetica', 'bold'); pdoc.setFontSize(9); pdoc.setTextColor(...DARK)
+    pdoc.text('Volume a Debitar do Estoque:', col1, y)
+    pdoc.setTextColor(...MED)
+    pdoc.text(fmtKg(saida.volume_abatido_kg), col1 + 60, y)
+    y += 8
+  }
+
+  y += 6
+
+  // ── Tabela FIFO ────────────────────────────────────────
+  pdoc.setFillColor(...DARK); pdoc.setTextColor(...WHITE)
+  pdoc.setFontSize(10); pdoc.setFont('helvetica', 'bold')
+  pdoc.roundedRect(14, y, W - 28, 9, 2, 2, 'F')
+  pdoc.text('ALOCAÇÃO NAS NFs DE ENTRADA (FIFO)', W / 2, y + 6, { align: 'center' })
+  y += 11
+
+  autoTable(pdoc, {
+    startY: y,
+    margin: { left: 14, right: 14 },
+    head: [['NF de Entrada', 'Data de Emissão', 'Volume Abatido (kg)']],
+    body: alocacoes.map(a => [
+      a.numero_nf,
+      a.data_emissao ? format(new Date(a.data_emissao), 'dd/MM/yyyy') : '—',
+      fmtKg(a.volume_alocado_kg),
+    ]),
+    foot: [[
+      { content: 'TOTAL', styles: { fontStyle: 'bold' } }, '',
+      { content: fmtKg(alocacoes.reduce((s, a) => s + Number(a.volume_alocado_kg), 0)), styles: { fontStyle: 'bold' } },
+    ]],
+    headStyles:         { fillColor: MED, textColor: WHITE, fontStyle: 'bold', fontSize: 9 },
+    bodyStyles:         { textColor: [30, 30, 60], fontSize: 9 },
+    footStyles:         { fillColor: LIGHT, textColor: DARK, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [240, 246, 255] },
+    columnStyles:       { 2: { halign: 'right' } },
+  })
+
+  // ── Assinatura ─────────────────────────────────────────
+  const signY = pdoc.lastAutoTable.finalY + 14
+  pdoc.setDrawColor(...MED); pdoc.setLineWidth(0.3)
+  pdoc.line(14, signY, 90, signY)
+  pdoc.line(W / 2 + 10, signY, W - 14, signY)
+  pdoc.setFontSize(8); pdoc.setTextColor(100, 100, 100); pdoc.setFont('helvetica', 'normal')
+  pdoc.text('Responsável pela Saída', 52, signY + 5, { align: 'center' })
+  pdoc.text('Conferente / Aprovação', W / 2 + 10 + 34, signY + 5, { align: 'center' })
+
+  // ── Rodapé ─────────────────────────────────────────────
+  const pH = pdoc.internal.pageSize.height
+  pdoc.setFillColor(...DARK)
+  pdoc.rect(0, pH - 12, W, 12, 'F')
+  pdoc.setTextColor(...WHITE); pdoc.setFontSize(7); pdoc.setFont('helvetica', 'normal')
+  pdoc.text('Rhodia — Sistema de Controle de Façonagem', W / 2, pH - 4, { align: 'center' })
+
+  pdoc.save(`romaneio_${saida.romaneio_microdata}_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`)
+}
+
+
