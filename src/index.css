@@ -747,8 +747,8 @@ html, body { overflow-x: hidden; max-width: 100vw; }
   /* Coluna de ações: nunca cortar */
   td:last-child, th:last-child {
     overflow: visible;
-    width: 70px;
-    min-width: 70px;
+    width: 90px;
+    min-width: 90px;
   }
 
   /* Esconde colunas menos importantes em mobile */
