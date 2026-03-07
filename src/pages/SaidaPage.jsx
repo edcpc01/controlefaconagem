@@ -29,7 +29,7 @@ function tipoBadge(tipo) {
   return <span className={`badge ${map[tipo] || 'badge-blue'}`}>{label}</span>
 }
 
-const fmt = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
+const fmt = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 // ── Modal de Confirmação FIFO ─────────────────────────────────────────────
 function ConfirmacaoModal({ form, preview, onConfirm, onCancel, loading }) {

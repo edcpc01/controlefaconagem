@@ -4,7 +4,7 @@ import { listarNFsEntrada, buscarAlocacoesPorNF, TIPOS_SAIDA, TIPOS_COM_ABATIMEN
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
-const fmt  = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
+const fmt  = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtD = d => { try { return format(new Date(d), 'dd/MM/yyyy') } catch { return '—' } }
 const fmtDT = d => { try { return format(new Date(d), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR }) } catch { return '—' } }
 

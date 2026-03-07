@@ -11,7 +11,7 @@ function Toast({ toasts }) {
 
 const EMPTY_FORM = { data_emissao: '', numero_nf: '', codigo_material: '', lote: '', volume_kg: '', valor_unitario: '' }
 
-const fmt        = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })
+const fmt        = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtCurrency = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 6 })
 
 // ── Formulário reutilizável (criar + editar) ──────────────────────
@@ -275,7 +275,7 @@ export default function EntradaPage() {
                   <th className="td-right col-hide-mobile">Volume (kg)</th>
                   <th className="td-right">Saldo (kg)</th>
                   <th className="td-right col-hide-mobile">V. Unitário</th>
-                  <th style={{width:100}}></th>
+                  <th style={{width:90}}></th>
                 </tr>
               </thead>
               <tbody>
@@ -293,7 +293,7 @@ export default function EntradaPage() {
                       {fmt(nf.volume_saldo_kg)}
                     </td>
                     <td className="td-right td-mono col-hide-mobile">{fmtCurrency(nf.valor_unitario)}</td>
-                    <td>
+                    <td style={{width:90, minWidth:90, overflow:'visible'}}>
                       <div style={{display:'flex', gap:2}}>
                         <button className="btn btn-ghost btn-sm" title="Ver detalhes" onClick={() => navigate(`/nf/${nf.id}`)}>🔍</button>
                         <button className="btn btn-ghost btn-sm" title="Editar" onClick={() => abrirEditar(nf)}>✏</button>
