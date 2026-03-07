@@ -578,12 +578,14 @@ export default function SaidaPage() {
                     <td style={{fontSize:11, color:'var(--text-dim)', whiteSpace:'nowrap'}}>
                       {s.criado_em ? format(new Date(s.criado_em), 'dd/MM/yy') : '—'}
                     </td>
-                    <td style={{whiteSpace:'nowrap', display:'flex', gap:4}}>
-                      <button className="btn btn-ghost btn-sm" title="Gerar Romaneio PDF"
-                        onClick={() => handleGerarPDF(s, s.alocacao_saida || [])}>📄</button>
-                      <button className="btn btn-ghost btn-sm" title="Excluir saída"
-                        onClick={() => setConfirmDeleteSaida(s)}
-                        style={{color:'var(--danger)'}}>🗑</button>
+                    <td style={{whiteSpace:'nowrap'}}>
+                      <div style={{display:'flex', gap:2}}>
+                        <button className="btn btn-ghost btn-sm" title="Gerar Romaneio PDF"
+                          onClick={() => handleGerarPDF(s, s.alocacao_saida || [])}>📄</button>
+                        <button className="btn btn-ghost btn-sm" title="Excluir saída"
+                          onClick={() => setConfirmDeleteSaida(s)}
+                          style={{color:'var(--danger)'}}>🗑</button>
+                      </div>
                     </td>
                   </tr>
                 ))}

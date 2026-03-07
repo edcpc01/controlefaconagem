@@ -294,7 +294,7 @@ export default function EntradaPage() {
                     </td>
                     <td className="td-right td-mono col-hide-mobile">{fmtCurrency(nf.valor_unitario)}</td>
                     <td>
-                      <div style={{display:'flex', gap:4}}>
+                      <div style={{display:'flex', gap:2}}>
                         <button className="btn btn-ghost btn-sm" title="Ver detalhes" onClick={() => navigate(`/nf/${nf.id}`)}>🔍</button>
                         <button className="btn btn-ghost btn-sm" title="Editar" onClick={() => abrirEditar(nf)}>✏</button>
                         <button className="btn btn-danger btn-sm" title="Remover" onClick={() => setConfirmDelete(nf)}>✕</button>
