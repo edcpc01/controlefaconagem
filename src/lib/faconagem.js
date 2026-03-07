@@ -506,7 +506,7 @@ export function gerarRomaneioPDF(saida, alocacoes, config = {}) {
 
   const tipoLbl = TIPOS_SAIDA.find(t => t.value === saida.tipo_saida)?.label || saida.tipo_saida
   const temAbat = TIPOS_COM_ABATIMENTO.includes(saida.tipo_saida)
-  const fmtKg   = n => n != null ? Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 }) + ' kg' : '—'
+  const fmtKg   = n => n != null ? Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kg' : '—'
   const codigoMaterial = saida.codigo_material || saida.codigo_produto || '—'
 
   // ── Cabeçalho ──────────────────────────────────────────
