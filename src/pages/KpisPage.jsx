@@ -70,13 +70,11 @@ function Legenda() {
 // Card de KPI individual (número + label)
 function KpiNum({ label, valor, pctVal, color }) {
   return (
-    <div style={{
-      flex: 1, minWidth: 0, background: 'rgba(255,255,255,0.04)',
-      borderRadius: 10, padding: '12px 14px', border: '1px solid var(--border)'
-    }}>
-      <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</div>
-      <div style={{ fontSize: 18, fontWeight: 700, color: color || 'var(--text)', lineHeight: 1.1 }}>{fmt(valor)} kg</div>
-      <div style={{ fontSize: 13, color: color || 'var(--text-dim)', marginTop: 3, fontWeight: 600 }}>{pctVal}%</div>
+    <div className="kpi-num-card">
+      <div className="kpi-num-label">{label}</div>
+      <div className="kpi-num-value" style={{ color: color || 'var(--text)' }}>{fmt(valor)}</div>
+      <div className="kpi-num-unit">kg</div>
+      <div className="kpi-num-pct" style={{ color: color || 'var(--text-dim)' }}>{pctVal}%</div>
     </div>
   )
 }
@@ -112,10 +110,10 @@ function LoteKpiCard({ g }) {
 
       {/* Detalhe expandido */}
       {open && (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
-          <KpiNum label="Faturamento" valor={g.fat} pctVal={pct(g.fat, base)} color="var(--accent)" />
-          <KpiNum label="Devolução"   valor={g.dev} pctVal={pct(g.dev, base)} color="var(--accent-2)" />
-          <KpiNum label="Sucata/Estopa" valor={g.suc} pctVal={pct(g.suc, base)} color="var(--danger)" />
+        <div className="kpi-grid-2" style={{ marginTop: 8 }}>
+          <KpiNum label="Faturamento"   valor={g.fat} pctVal={pct(g.fat, base)} color="var(--accent)"   />
+          <KpiNum label="Devolução"     valor={g.dev} pctVal={pct(g.dev, base)} color="var(--accent-2)" />
+          <KpiNum label="Sucata/Estopa" valor={g.suc} pctVal={pct(g.suc, base)} color="var(--danger)"   />
         </div>
       )}
 
@@ -206,11 +204,11 @@ export default function KpisPage() {
         </div>
         <BarraSegmentada fat={totalFat} dev={totalDev} suc={totalSuc} outros={0} total={totalEntrada} />
 
-        {/* Grid KPIs principais */}
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 20 }}>
-          <KpiNum label="Faturamento"   valor={totalFat}  pctVal={pct(totalFat,  totalEntrada)} color="var(--accent)"   />
-          <KpiNum label="Devolução"     valor={totalDev}  pctVal={pct(totalDev,  totalEntrada)} color="var(--accent-2)" />
-          <KpiNum label="Sucata/Estopa" valor={totalSuc}  pctVal={pct(totalSuc,  totalEntrada)} color="var(--danger)"   />
+        {/* Grid KPIs principais 2x2 */}
+        <div className="kpi-grid-2">
+          <KpiNum label="Faturamento"   valor={totalFat}   pctVal={pct(totalFat,   totalEntrada)} color="var(--accent)"   />
+          <KpiNum label="Devolução"     valor={totalDev}   pctVal={pct(totalDev,   totalEntrada)} color="var(--accent-2)" />
+          <KpiNum label="Sucata/Estopa" valor={totalSuc}   pctVal={pct(totalSuc,   totalEntrada)} color="var(--danger)"   />
           <KpiNum label="Saldo"         valor={totalSaldo} pctVal={pct(totalSaldo, totalEntrada)} color="var(--text-dim)" />
         </div>
 
@@ -220,7 +218,7 @@ export default function KpisPage() {
             <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-2)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               Detalhamento Devoluções
             </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div className="kpi-grid-2">
               {devQual  > 0 && <KpiNum label="Dev. Qualidade"      valor={devQual}  pctVal={pct(devQual,  totalEntrada)} color="var(--accent-2)" />}
               {devProc  > 0 && <KpiNum label="Dev. Processo"       valor={devProc}  pctVal={pct(devProc,  totalEntrada)} color="var(--accent-2)" />}
               {devFinal > 0 && <KpiNum label="Dev. Final Campanha" valor={devFinal} pctVal={pct(devFinal, totalEntrada)} color="var(--accent-2)" />}
@@ -234,7 +232,7 @@ export default function KpisPage() {
             <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--danger)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               Detalhamento Sucata
             </div>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div className="kpi-grid-2">
               {soSucata > 0 && <KpiNum label="Sucata" valor={soSucata} pctVal={pct(soSucata, totalEntrada)} color="var(--danger)" />}
               {soEstopa > 0 && <KpiNum label="Estopa" valor={soEstopa} pctVal={pct(soEstopa, totalEntrada)} color="var(--warn)"   />}
             </div>
