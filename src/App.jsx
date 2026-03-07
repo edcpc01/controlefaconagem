@@ -11,6 +11,7 @@ import LogPage       from './pages/LogPage'
 import ConfigPage    from './pages/ConfigPage'
 import UsersPage     from './pages/UsersPage'
 import LoginPage     from './pages/LoginPage'
+import KpisPage      from './pages/KpisPage'
 import './index.css'
 
 // ── PWA Install Banner ───────────────────────────────────────────
@@ -51,6 +52,7 @@ const NAV_BASE = [
   { to: '/',        label: 'Dashboard',  icon: '◈', end: true },
   { to: '/entrada', label: 'NF Entrada', icon: '↓' },
   { to: '/saida',   label: 'Saída',      icon: '↑' },
+  { to: '/kpis',    label: 'KPIs',       icon: '📊' },
   { to: '/log',     label: 'Histórico',  icon: '📋' },
   { to: '/config',  label: 'Config',     icon: '⚙' },
 ]
@@ -193,6 +195,7 @@ function ProtectedApp() {
           <Route path="/entrada"  element={<EntradaPage />} />
           <Route path="/nf/:id"   element={<NFDetailPage />} />
           <Route path="/saida"    element={<SaidaPage />} />
+          <Route path="/kpis"     element={<KpisPage />} />
           <Route path="/log"      element={<LogPage />} />
           <Route path="/config"   element={<ConfigPage />} />
           <Route path="/usuarios" element={<UsersPage />} />
