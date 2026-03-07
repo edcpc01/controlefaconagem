@@ -56,12 +56,12 @@ body {
 .brand-title { font-size: 16px; font-weight: 700; color: var(--text); line-height: 1.1; }
 .brand-sub { font-size: 10px; color: var(--text-dim); letter-spacing: 0.05em; text-transform: uppercase; }
 
-.nav-desktop { display: flex; gap: 4px; }
+.nav-desktop { display: flex; gap: 2px; flex-shrink: 0; overflow: visible; }
 .nav-link {
-  display: flex; align-items: center; gap: 6px;
-  padding: 7px 14px; border-radius: 6px;
-  font-size: 13px; font-weight: 500; color: var(--text-dim);
-  text-decoration: none; transition: all 0.2s;
+  display: flex; align-items: center; gap: 4px;
+  padding: 7px 10px; border-radius: 6px;
+  font-size: 12px; font-weight: 500; color: var(--text-dim);
+  text-decoration: none; transition: all 0.2s; white-space: nowrap;
 }
 .nav-link:hover { background: rgba(58,114,216,0.15); color: var(--text); }
 .nav-link.active { background: rgba(34,85,184,0.3); color: var(--accent); border: 1px solid rgba(0,195,255,0.2); }
@@ -790,4 +790,57 @@ html, body { overflow-x: hidden; max-width: 100vw; }
 @keyframes slideUp {
   from { opacity: 0; transform: translateX(-50%) translateY(20px); }
   to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ── KPI CARDS ─────────────────────────────────────────────────── */
+.kpi-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.kpi-num-card {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  box-sizing: border-box;
+  overflow: hidden;
+  min-width: 0;
+  /* sobrescreve qualquer herança de tabela */
+  white-space: normal !important;
+  text-overflow: clip !important;
+}
+
+.kpi-num-label {
+  font-size: 9px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kpi-num-value {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kpi-num-unit {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-top: 1px;
+  margin-bottom: 2px;
+}
+
+.kpi-num-pct {
+  font-size: 13px;
+  font-weight: 700;
 }

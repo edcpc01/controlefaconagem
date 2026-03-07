@@ -3,14 +3,16 @@ import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-do
 import { AuthProvider, useAuth } from './lib/AuthContext'
 import { ThemeProvider, useTheme } from './lib/ThemeContext'
 import { UserProvider, useUser, UNIDADES_DEFAULT } from './lib/UserContext'
-import EntradaPage   from './pages/EntradaPage'
-import SaidaPage     from './pages/SaidaPage'
-import DashboardPage from './pages/DashboardPage'
-import NFDetailPage  from './pages/NFDetailPage'
-import LogPage       from './pages/LogPage'
-import ConfigPage    from './pages/ConfigPage'
-import UsersPage     from './pages/UsersPage'
-import LoginPage     from './pages/LoginPage'
+import EntradaPage    from './pages/EntradaPage'
+import SaidaPage      from './pages/SaidaPage'
+import DashboardPage  from './pages/DashboardPage'
+import NFDetailPage   from './pages/NFDetailPage'
+import LogPage        from './pages/LogPage'
+import ConfigPage     from './pages/ConfigPage'
+import UsersPage      from './pages/UsersPage'
+import LoginPage      from './pages/LoginPage'
+import KpiPage        from './pages/KpiPage'
+import InventarioPage from './pages/InventarioPage'
 import KpisPage      from './pages/KpisPage'
 import './index.css'
 
@@ -49,12 +51,13 @@ function PWAInstallBanner() {
 }
 
 const NAV_BASE = [
-  { to: '/',        label: 'Dashboard',  icon: '◈', end: true },
-  { to: '/entrada', label: 'NF Entrada', icon: '↓' },
-  { to: '/saida',   label: 'Saída',      icon: '↑' },
-  { to: '/kpis',    label: 'KPIs',       icon: '📊' },
-  { to: '/log',     label: 'Histórico',  icon: '📋' },
-  { to: '/config',  label: 'Config',     icon: '⚙' },
+  { to: '/',           label: 'Dashboard',  icon: '◈', end: true },
+  { to: '/entrada',    label: 'NF Entrada', icon: '↓' },
+  { to: '/saida',      label: 'Saída',      icon: '↑' },
+  { to: '/kpis',       label: 'KPIs',       icon: '📊' },
+  { to: '/inventario', label: 'Inventário', icon: '📦' },
+  { to: '/log',        label: 'Histórico',  icon: '📋' },
+  { to: '/config',     label: 'Config',     icon: '⚙' },
 ]
 
 // ── Seletor de Unidade no header ─────────────────────────────────
@@ -191,15 +194,16 @@ function ProtectedApp() {
     <>
       <Layout>
         <Routes>
-          <Route path="/"         element={<DashboardPage />} />
-          <Route path="/entrada"  element={<EntradaPage />} />
-          <Route path="/nf/:id"   element={<NFDetailPage />} />
-          <Route path="/saida"    element={<SaidaPage />} />
-          <Route path="/kpis"     element={<KpisPage />} />
-          <Route path="/log"      element={<LogPage />} />
-          <Route path="/config"   element={<ConfigPage />} />
-          <Route path="/usuarios" element={<UsersPage />} />
-          <Route path="*"         element={<Navigate to="/" replace />} />
+          <Route path="/"           element={<DashboardPage />} />
+          <Route path="/entrada"    element={<EntradaPage />} />
+          <Route path="/nf/:id"     element={<NFDetailPage />} />
+          <Route path="/saida"      element={<SaidaPage />} />
+          <Route path="/kpi"        element={<KpiPage />} />
+          <Route path="/inventario" element={<InventarioPage />} />
+          <Route path="/log"        element={<LogPage />} />
+          <Route path="/config"     element={<ConfigPage />} />
+          <Route path="/usuarios"   element={<UsersPage />} />
+          <Route path="*"           element={<Navigate to="/" replace />} />
         </Routes>
       </Layout>
       <PWAInstallBanner />
