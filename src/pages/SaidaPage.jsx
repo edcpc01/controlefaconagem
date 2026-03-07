@@ -544,14 +544,14 @@ export default function SaidaPage() {
             <table>
               <thead>
                 <tr>
-                  <th>Romaneio</th>
-                  <th>Cód. Material</th>
+                  <th className="col-hide-mobile">Romaneio</th>
+                  <th>Cód.</th>
                   <th>Lote POY</th>
-                  <th>Lote Acab.</th>
+                  <th className="col-hide-mobile">Lote Acab.</th>
                   <th>Tipo</th>
-                  <th className="td-right">Líq. (kg)</th>
-                  <th className="td-right">Final (kg)</th>
-                  <th>Qtd</th>
+                  <th className="td-right col-hide-mobile">Líq. (kg)</th>
+                  <th className="td-right col-hide-mobile">Final (kg)</th>
+                  <th className="col-hide-mobile">Qtd</th>
                   <th>Data</th>
                   <th></th>
                 </tr>
@@ -567,16 +567,16 @@ export default function SaidaPage() {
                 )}
                 {saidasFiltradas.map(s => (
                   <tr key={s.id}>
-                    <td className="td-mono" style={{fontWeight:600}}>{s.romaneio_microdata}</td>
+                    <td className="td-mono col-hide-mobile" style={{fontWeight:600}}>{s.romaneio_microdata}</td>
                     <td>{s.codigo_material || s.codigo_produto}</td>
                     <td className="td-mono">{s.lote_poy || s.lote_produto || '—'}</td>
-                    <td className="td-mono" style={{color:'var(--text-dim)'}}>{s.lote_acabado || '—'}</td>
+                    <td className="td-mono col-hide-mobile" style={{color:'var(--text-dim)'}}>{s.lote_acabado || '—'}</td>
                     <td>{tipoBadge(s.tipo_saida)}</td>
-                    <td className="td-right td-mono">{fmt(s.volume_liquido_kg || s.volume_bruto_kg)}</td>
-                    <td className="td-right td-mono" style={{color:'var(--accent)', fontWeight:600}}>{fmt(s.volume_abatido_kg)}</td>
-                    <td style={{fontSize:12, color:'var(--text-dim)'}}>{s.quantidade || '—'}</td>
-                    <td style={{fontSize:12, color:'var(--text-dim)', whiteSpace:'nowrap'}}>
-                      {s.criado_em ? format(new Date(s.criado_em), 'dd/MM/yy HH:mm') : '—'}
+                    <td className="td-right td-mono col-hide-mobile">{fmt(s.volume_liquido_kg || s.volume_bruto_kg)}</td>
+                    <td className="td-right td-mono col-hide-mobile" style={{color:'var(--accent)', fontWeight:600}}>{fmt(s.volume_abatido_kg)}</td>
+                    <td className="col-hide-mobile" style={{fontSize:12, color:'var(--text-dim)'}}>{s.quantidade || '—'}</td>
+                    <td style={{fontSize:11, color:'var(--text-dim)', whiteSpace:'nowrap'}}>
+                      {s.criado_em ? format(new Date(s.criado_em), 'dd/MM/yy') : '—'}
                     </td>
                     <td style={{whiteSpace:'nowrap', display:'flex', gap:4}}>
                       <button className="btn btn-ghost btn-sm" title="Gerar Romaneio PDF"

@@ -270,11 +270,11 @@ export default function EntradaPage() {
                 <tr>
                   <th>NF</th>
                   <th>Emissão</th>
-                  <th>Cód. Material</th>
+                  <th className="col-hide-mobile">Cód. Material</th>
                   <th>Lote POY</th>
-                  <th className="td-right">Volume (kg)</th>
+                  <th className="td-right col-hide-mobile">Volume (kg)</th>
                   <th className="td-right">Saldo (kg)</th>
-                  <th className="td-right">V. Unitário</th>
+                  <th className="td-right col-hide-mobile">V. Unitário</th>
                   <th style={{width:100}}></th>
                 </tr>
               </thead>
@@ -285,14 +285,14 @@ export default function EntradaPage() {
                 {nfs.map(nf => (
                   <tr key={nf.id}>
                     <td className="td-mono" style={{fontWeight:600}}>{nf.numero_nf}</td>
-                    <td>{format(new Date(nf.data_emissao), 'dd/MM/yyyy')}</td>
-                    <td>{nf.codigo_material}</td>
+                    <td>{format(new Date(nf.data_emissao), 'dd/MM/yy')}</td>
+                    <td className="col-hide-mobile">{nf.codigo_material}</td>
                     <td>{nf.lote}</td>
-                    <td className="td-right td-mono">{fmt(nf.volume_kg)}</td>
+                    <td className="td-right td-mono col-hide-mobile">{fmt(nf.volume_kg)}</td>
                     <td className="td-right td-mono" style={{color: Number(nf.volume_saldo_kg) <= 0.01 ? 'var(--danger)' : 'var(--accent-2)', fontWeight:600}}>
                       {fmt(nf.volume_saldo_kg)}
                     </td>
-                    <td className="td-right td-mono">{fmtCurrency(nf.valor_unitario)}</td>
+                    <td className="td-right td-mono col-hide-mobile">{fmtCurrency(nf.valor_unitario)}</td>
                     <td>
                       <div style={{display:'flex', gap:4}}>
                         <button className="btn btn-ghost btn-sm" title="Ver detalhes" onClick={() => navigate(`/nf/${nf.id}`)}>🔍</button>
