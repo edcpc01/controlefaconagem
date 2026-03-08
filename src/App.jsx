@@ -14,6 +14,7 @@ import UsersPage      from './pages/UsersPage'
 import LoginPage      from './pages/LoginPage'
 import KpisPage       from './pages/KpisPage'
 import InventarioPage from './pages/InventarioPage'
+import MapaCalorPage  from './pages/MapaCalorPage'
 import './index.css'
 
 // ── PWA Install Banner ───────────────────────────────────────────
@@ -56,6 +57,7 @@ const NAV_BASE = [
   { to: '/saida',      label: 'Saída',      icon: '↑' },
   { to: '/kpis',       label: 'KPIs',       icon: '📊' },
   { to: '/inventario', label: 'Inventário', icon: '🔍' },
+  { to: '/mapa',       label: 'Mapa',       icon: '🌡️' },
   { to: '/log',        label: 'Histórico',  icon: '📋' },
   { to: '/config',     label: 'Config',     icon: '⚙' },
 ]
@@ -104,12 +106,36 @@ function Layout({ children }) {
   const isAdmin                 = ctx?.isAdmin ?? false
   const [nfsAlertaCount, setNfsAlertaCount] = useState(0)
 
-  // Carrega badge de vencimento
+  // Carrega badge de vencimento + dispara notificação push ao abrir
   useEffect(() => {
     if (!ctx?.unidadeAtiva) return
     listarNFsEntrada(ctx.unidadeAtiva).then(nfs => {
-      const count = nfs.filter(n => ['vencida','alerta'].includes(statusVencimentoNF(n))).length
-      setNfsAlertaCount(count)
+      const alertas = nfs.filter(n => ['vencida','alerta'].includes(statusVencimentoNF(n)))
+      setNfsAlertaCount(alertas.length)
+
+      // Notificação push — só se tiver permissão e houver alertas
+      if (alertas.length === 0) return
+      if (!('Notification' in window)) return
+
+      const disparar = () => {
+        const vencidas = alertas.filter(n => statusVencimentoNF(n) === 'vencida').length
+        const emAlerta = alertas.filter(n => statusVencimentoNF(n) === 'alerta').length
+        const linhas = []
+        if (vencidas > 0) linhas.push(`🚨 ${vencidas} NF${vencidas>1?'s':''} vencida${vencidas>1?'s':''}`)
+        if (emAlerta > 0) linhas.push(`⚠️ ${emAlerta} NF${emAlerta>1?'s':''} vencem em breve`)
+        new Notification('Façonagem Rhodia — Atenção!', {
+          body: linhas.join('\n'),
+          icon: '/icon-192.png',
+          badge: '/icon-192.png',
+          tag: 'nf-vencimento', // evita múltiplas notificações duplicadas
+        })
+      }
+
+      if (Notification.permission === 'granted') {
+        disparar()
+      } else if (Notification.permission === 'default') {
+        Notification.requestPermission().then(p => { if (p === 'granted') disparar() })
+      }
     }).catch(() => {})
   }, [ctx?.unidadeAtiva])
 
@@ -223,6 +249,7 @@ function ProtectedApp() {
           <Route path="/saida"    element={<SaidaPage />} />
           <Route path="/kpis"       element={<KpisPage />} />
           <Route path="/inventario" element={<InventarioPage />} />
+          <Route path="/mapa"       element={<MapaCalorPage />} />
           <Route path="/log"      element={<LogPage />} />
           <Route path="/config"   element={<ConfigPage />} />
           <Route path="/usuarios" element={<UsersPage />} />
