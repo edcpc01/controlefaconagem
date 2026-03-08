@@ -34,6 +34,36 @@ export function calcularVolumeAbatido(volumeLiquido, tipoSaida) {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// VENCIMENTO DE NFs
+// ─────────────────────────────────────────────────────────────────
+
+// Retorna status de vencimento de uma NF com saldo > 0
+// 'ok'       → menos de 5 meses
+// 'alerta'   → entre 5 e 6 meses (aviso: vence em breve)
+// 'vencida'  → mais de 6 meses com saldo
+// 'zerada'   → saldo <= 0 (não exibe alerta)
+export function statusVencimentoNF(nf) {
+  const saldo = Number(nf.volume_saldo_kg || 0)
+  if (saldo <= 0.01) return 'zerada'
+  if (!nf.data_emissao) return 'ok'
+  const emissao = new Date(nf.data_emissao)
+  if (isNaN(emissao)) return 'ok'
+  const diasDecorridos = (Date.now() - emissao.getTime()) / (1000 * 60 * 60 * 24)
+  if (diasDecorridos > 180) return 'vencida'   // > 6 meses
+  if (diasDecorridos > 150) return 'alerta'    // entre 5 e 6 meses
+  return 'ok'
+}
+
+// Dias restantes até 6 meses (negativo = já vencido)
+export function diasParaVencimento(nf) {
+  if (!nf.data_emissao) return 999
+  const emissao = new Date(nf.data_emissao)
+  if (isNaN(emissao)) return 999
+  const vencimento = new Date(emissao.getTime() + 180 * 24 * 60 * 60 * 1000)
+  return Math.ceil((vencimento.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+}
+
+// ─────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────
 
