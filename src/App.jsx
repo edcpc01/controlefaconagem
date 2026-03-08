@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-do
 import { AuthProvider, useAuth } from './lib/AuthContext'
 import { ThemeProvider, useTheme } from './lib/ThemeContext'
 import { UserProvider, useUser, UNIDADES_DEFAULT } from './lib/UserContext'
+import { listarNFsEntrada, statusVencimentoNF } from './lib/faconagem'
 import EntradaPage    from './pages/EntradaPage'
 import SaidaPage      from './pages/SaidaPage'
 import DashboardPage  from './pages/DashboardPage'
@@ -99,10 +100,25 @@ function Layout({ children }) {
   const { user, logout }        = useAuth()
   const ctx                     = useUser()
   const isAdmin                 = ctx?.isAdmin ?? false
+  const [nfsAlertaCount, setNfsAlertaCount] = useState(0)
+
+  // Carrega badge de vencimento
+  useEffect(() => {
+    if (!ctx?.unidadeAtiva) return
+    listarNFsEntrada(ctx.unidadeAtiva).then(nfs => {
+      const count = nfs.filter(n => ['vencida','alerta'].includes(statusVencimentoNF(n))).length
+      setNfsAlertaCount(count)
+    }).catch(() => {})
+  }, [ctx?.unidadeAtiva])
 
   const navItems = isAdmin
     ? [...NAV_BASE, { to: '/usuarios', label: 'Usuários', icon: '👥' }]
     : NAV_BASE
+
+  const badgeFor = (to) => {
+    if (to === '/entrada' && nfsAlertaCount > 0) return nfsAlertaCount
+    return null
+  }
 
   return (
     <div className="app">
@@ -120,12 +136,16 @@ function Layout({ children }) {
 
           {/* Nav desktop */}
           <nav className="nav-desktop">
-            {navItems.map(n => (
-              <NavLink key={n.to} to={n.to} end={!!n.end}
-                className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-                <span className="nav-icon">{n.icon}</span>{n.label}
-              </NavLink>
-            ))}
+            {navItems.map(n => {
+              const badge = badgeFor(n.to)
+              return (
+                <NavLink key={n.to} to={n.to} end={!!n.end}
+                  className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
+                  <span className="nav-icon">{n.icon}</span>{n.label}
+                  {badge && <span style={{ marginLeft:5, background:'var(--danger)', color:'#fff', borderRadius:99, fontSize:10, fontWeight:700, padding:'1px 6px', lineHeight:'16px' }}>{badge}</span>}
+                </NavLink>
+              )
+            })}
           </nav>
 
           {/* Actions */}
@@ -149,13 +169,17 @@ function Layout({ children }) {
         {/* Nav mobile */}
         {menuOpen && (
           <nav className="nav-mobile">
-            {navItems.map(n => (
-              <NavLink key={n.to} to={n.to} end={!!n.end}
-                className={({ isActive }) => `nav-link-mobile ${isActive ? 'active' : ''}`}
-                onClick={() => setMenuOpen(false)}>
-                <span className="nav-icon">{n.icon}</span> {n.label}
-              </NavLink>
-            ))}
+            {navItems.map(n => {
+              const badge = badgeFor(n.to)
+              return (
+                <NavLink key={n.to} to={n.to} end={!!n.end}
+                  className={({ isActive }) => `nav-link-mobile ${isActive ? 'active' : ''}`}
+                  onClick={() => setMenuOpen(false)}>
+                  <span className="nav-icon">{n.icon}</span> {n.label}
+                  {badge && <span style={{ marginLeft:6, background:'var(--danger)', color:'#fff', borderRadius:99, fontSize:10, fontWeight:700, padding:'1px 6px' }}>{badge}</span>}
+                </NavLink>
+              )
+            })}
             <div style={{ margin: '8px 0', padding: '8px 0', borderTop: '1px solid var(--border)' }}>
               <UnidadeSelector />
             </div>
