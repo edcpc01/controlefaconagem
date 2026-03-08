@@ -129,9 +129,15 @@ function LoteKpiCard({ g }) {
 
 export default function KpisPage() {
   const { unidadeAtiva } = useUser() || {}
+
+  // ── TODOS os hooks primeiro ────────────────────────────────────
   const [nfs,     setNfs]     = useState([])
   const [saidas,  setSaidas]  = useState([])
   const [loading, setLoading] = useState(true)
+  const now = new Date()
+  const [mesSel, setMesSel]   = useState(now.getMonth() + 1)
+  const [anoSel, setAnoSel]   = useState(now.getFullYear())
+  const [gerando, setGerando] = useState(false)
 
   useEffect(() => {
     setLoading(true)
@@ -141,27 +147,18 @@ export default function KpisPage() {
       .finally(() => setLoading(false))
   }, [unidadeAtiva])
 
-  // ── Totais gerais ─────────────────────────────────────────────
+  // ── Cálculos (depois dos hooks) ────────────────────────────────
   const totalEntrada = nfs.reduce((a, n) => a + Number(n.volume_kg || 0), 0)
   const totalSaldo   = nfs.reduce((a, n) => a + Number(n.volume_saldo_kg || 0), 0)
-
   const totalFat  = saidas.filter(s => s.tipo_saida === 'faturamento').reduce((a, s) => a + Number(s.volume_abatido_kg || 0), 0)
   const totalDev  = saidas.filter(s => s.tipo_saida?.startsWith('dev_')).reduce((a, s) => a + Number(s.volume_abatido_kg || 0), 0)
   const totalSuc  = saidas.filter(s => ['sucata', 'estopa'].includes(s.tipo_saida)).reduce((a, s) => a + Number(s.volume_abatido_kg || 0), 0)
-  const totalSaida = totalFat + totalDev + totalSuc
-
-  // Detalhes devolução
   const devQual   = saidas.filter(s => s.tipo_saida === 'dev_qualidade').reduce((a, s) => a + Number(s.volume_abatido_kg || 0), 0)
   const devProc   = saidas.filter(s => s.tipo_saida === 'dev_processo').reduce((a, s) => a + Number(s.volume_abatido_kg || 0), 0)
   const devFinal  = saidas.filter(s => s.tipo_saida === 'dev_final_campanha').reduce((a, s) => a + Number(s.volume_abatido_kg || 0), 0)
-  // Detalhes sucata
   const soSucata  = saidas.filter(s => s.tipo_saida === 'sucata').reduce((a, s) => a + Number(s.volume_abatido_kg || 0), 0)
   const soEstopa  = saidas.filter(s => s.tipo_saida === 'estopa').reduce((a, s) => a + Number(s.volume_abatido_kg || 0), 0)
-
-  const now = new Date()
-  const [mesSel, setMesSel] = useState(now.getMonth() + 1)
-  const [anoSel, setAnoSel] = useState(now.getFullYear())
-  const [gerando, setGerando] = useState(false)
+  const loteKpis  = calcKpiPorLote(nfs, saidas)
 
   const anos = Array.from({ length: 4 }, (_, i) => now.getFullYear() - i)
   const meses = [
@@ -172,7 +169,11 @@ export default function KpisPage() {
     { v: 10, l: 'Outubro' }, { v: 11, l: 'Novembro'  }, { v: 12, l: 'Dezembro' },
   ]
 
-  const loteKpis = calcKpiPorLote(nfs, saidas)
+  const handleGerarPDF = () => {
+    setGerando(true)
+    try { gerarRelatorioPDF(nfs, saidas, mesSel || null, anoSel) }
+    finally { setGerando(false) }
+  }
 
   if (loading) return <div className="loading"><div className="spinner" /><div>Carregando...</div></div>
 
