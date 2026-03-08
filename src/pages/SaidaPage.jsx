@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react'
 import {
   listarSaidas, criarSaida, deletarSaida, listarNFsEntrada, previewFIFO,
   TIPOS_SAIDA, TIPOS_COM_ABATIMENTO,
-  calcularVolumeAbatido, gerarRomaneioPDF, exportarExcel, carregarConfig
+  calcularVolumeAbatido, gerarRomaneioPDF, gerarRomaneioBase64, exportarExcel, carregarConfig
 } from '../lib/faconagem'
 import { useAuth } from '../lib/AuthContext'
 import { useUser } from '../lib/UserContext'
@@ -142,7 +142,7 @@ function ConfirmacaoModal({ form, preview, onConfirm, onCancel, loading }) {
 }
 
 // ── Modal de Sucesso ───────────────────────────────────────────────────────
-function SucessoModal({ ultimaSaida, onClose, onPDF }) {
+function SucessoModal({ ultimaSaida, onClose, onPDF, onEmail, emailLoading }) {
   const s = ultimaSaida.saida
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -200,7 +200,10 @@ function SucessoModal({ ultimaSaida, onClose, onPDF }) {
 
         <div className="modal-actions">
           <button className="btn btn-ghost" onClick={onClose}>Fechar</button>
-          <button className="btn btn-success" onClick={onPDF}>📄 Gerar Romaneio PDF</button>
+          <button className="btn btn-ghost" onClick={onEmail} disabled={emailLoading}>
+            {emailLoading ? '⏳ Enviando...' : '📧 Enviar por E-mail'}
+          </button>
+          <button className="btn btn-success" onClick={onPDF}>📄 Gerar PDF</button>
         </div>
       </div>
     </div>
@@ -221,6 +224,7 @@ export default function SaidaPage() {
   const [confirmacao, setConfirmacao] = useState(null)
   const [config, setConfig]           = useState({})
   const [confirmDeleteSaida, setConfirmDeleteSaida] = useState(null)
+  const [emailLoading, setEmailLoading] = useState(false)
 
   // Offline
   const [isOnline, setIsOnline]       = useState(navigator.onLine)
@@ -447,6 +451,68 @@ export default function SaidaPage() {
   const handleGerarPDF = (saida, alocacoes) => {
     gerarRomaneioPDF(saida, alocacoes, config)
     toast('Romaneio PDF gerado!')
+  }
+
+  // Envia romaneio individual por e-mail
+  const handleEmailIndividual = async () => {
+    if (!ultimaSaida) return
+    if (!user?.email) { toast('E-mail do usuário não encontrado.', 'error'); return }
+    setEmailLoading(true)
+    try {
+      const pdfBase64 = gerarRomaneioBase64(ultimaSaida.saida, ultimaSaida.alocacoes, config)
+      const res = await fetch('/api/send-romaneio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          emailDestino: user.email,
+          nomeUsuario:  user.displayName || user.email,
+          romaneios: [{
+            ...ultimaSaida.saida,
+            pdfBase64,
+          }]
+        })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao enviar e-mail.')
+      toast(`📧 Romaneio enviado para ${user.email}!`)
+    } catch (e) {
+      toast(e.message, 'error')
+    } finally {
+      setEmailLoading(false)
+    }
+  }
+
+  // Envia lote por e-mail (todos os romaneios de uma vez)
+  const handleEmailLote = async () => {
+    if (!user?.email) { toast('E-mail do usuário não encontrado.', 'error'); return }
+    if (loteResultados.length === 0) return
+    setEmailLoading(true)
+    try {
+      // Para cada resultado do lote, precisamos reconstruir a saída com alocações
+      // loteResultados: [{romaneio, nf, volLiq, res}]
+      const romaneiosPayload = loteResultados.map(r => {
+        const saidaObj = r.res?.saida || {}
+        const alocObj  = r.res?.alocacoes || []
+        const pdfBase64 = gerarRomaneioBase64(saidaObj, alocObj, config)
+        return { ...saidaObj, pdfBase64 }
+      })
+      const res = await fetch('/api/send-romaneio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          emailDestino: user.email,
+          nomeUsuario:  user.displayName || user.email,
+          romaneios:    romaneiosPayload,
+        })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Erro ao enviar e-mail.')
+      toast(`📧 ${loteResultados.length} romaneio(s) enviado(s) para ${user.email}!`)
+    } catch (e) {
+      toast(e.message, 'error')
+    } finally {
+      setEmailLoading(false)
+    }
   }
 
   // Zera o volume líquido para consumir exatamente o saldo disponível
@@ -872,7 +938,16 @@ export default function SaidaPage() {
                   <span style={{color:'var(--accent)', fontFamily:'monospace'}}>{fmt(calcularVolumeAbatido(r.volLiq, loteForm.tipo_saida))} kg</span>
                 </div>
               ))}
-              <button className="btn btn-ghost btn-sm" style={{marginTop:12}} onClick={resetLote}>Novo lote</button>
+              <div style={{display:'flex', gap:8, marginTop:12, flexWrap:'wrap'}}>
+                <button className="btn btn-ghost btn-sm" onClick={resetLote}>Novo lote</button>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={handleEmailLote}
+                  disabled={emailLoading}
+                >
+                  {emailLoading ? '⏳ Enviando...' : '📧 Enviar PDFs por E-mail'}
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -977,6 +1052,8 @@ export default function SaidaPage() {
           ultimaSaida={ultimaSaida}
           onClose={() => setUltimaSaida(null)}
           onPDF={() => handleGerarPDF(ultimaSaida.saida, ultimaSaida.alocacoes)}
+          onEmail={handleEmailIndividual}
+          emailLoading={emailLoading}
         />
       )}
 
