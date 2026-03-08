@@ -730,13 +730,13 @@ export function gerarRelatorioPDF(nfs, saidas, mes, ano, config = {}) {
   const fmtN  = n => Number(n||0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const mesLabel = mes ? format(new Date(ano, mes - 1, 1), 'MMMM yyyy', { locale: ptBR }) : `${ano}`
 
-  // Filtra por mês/ano se fornecido
+  // Filtra NFs e saídas pelo mesmo período
   const nfsFiltradas = mes
     ? nfs.filter(n => { const d = new Date(n.data_emissao); return d.getMonth()+1 === mes && d.getFullYear() === ano })
-    : nfs
+    : nfs.filter(n => { const d = new Date(n.data_emissao); return d.getFullYear() === ano })
   const saidasFiltradas = mes
     ? saidas.filter(s => { const d = new Date(s.criado_em); return d.getMonth()+1 === mes && d.getFullYear() === ano })
-    : saidas
+    : saidas.filter(s => { const d = new Date(s.criado_em); return d.getFullYear() === ano })
 
   // Cabeçalho
   pdoc.setFillColor(...DARK); pdoc.rect(0, 0, W, 32, 'F')
@@ -750,13 +750,14 @@ export function gerarRelatorioPDF(nfs, saidas, mes, ano, config = {}) {
 
   let y = 40
 
-  // KPIs resumo
+  // KPIs resumo — base = NFs do período selecionado
   const totalEntrada = nfsFiltradas.reduce((a,n) => a + Number(n.volume_kg), 0)
   const totalSaldo   = nfsFiltradas.reduce((a,n) => a + Number(n.volume_saldo_kg), 0)
   const totalFat  = saidasFiltradas.filter(s => s.tipo_saida === 'faturamento').reduce((a,s) => a + Number(s.volume_abatido_kg), 0)
   const totalDev  = saidasFiltradas.filter(s => s.tipo_saida?.startsWith('dev_')).reduce((a,s) => a + Number(s.volume_abatido_kg), 0)
   const totalSuc  = saidasFiltradas.filter(s => ['sucata','estopa'].includes(s.tipo_saida)).reduce((a,s) => a + Number(s.volume_abatido_kg), 0)
   const totalSaida = saidasFiltradas.reduce((a,s) => a + Number(s.volume_abatido_kg), 0)
+  const base = totalEntrada // denominador para todos os %
 
   const kpis = [
     ['Total Entrada (kg)',    fmtN(totalEntrada)],
@@ -848,15 +849,15 @@ export function gerarRelatorioPDF(nfs, saidas, mes, ano, config = {}) {
     startY: y, margin: { left: 14, right: 14 },
     head: [['Categoria', 'Volume (kg)', '% Entrada']],
     body: [
-      ['Faturamento',             fmtN(totalFat),   pctStr(totalFat,   totalEntrada)],
-      ['Devolução Total',         fmtN(totalDev),   pctStr(totalDev,   totalEntrada)],
-      ['  • Dev. Qualidade',      fmtN(devQual),    pctStr(devQual,    totalEntrada)],
-      ['  • Dev. Processo',       fmtN(devProc),    pctStr(devProc,    totalEntrada)],
-      ['  • Dev. Final Campanha', fmtN(devFinal),   pctStr(devFinal,   totalEntrada)],
-      ['Sucata + Estopa',         fmtN(totalSuc),   pctStr(totalSuc,   totalEntrada)],
-      ['  • Sucata',              fmtN(soSucata),   pctStr(soSucata,   totalEntrada)],
-      ['  • Estopa',              fmtN(soEstopa),   pctStr(soEstopa,   totalEntrada)],
-      ['Saldo em Estoque',        fmtN(totalSaldo), pctStr(totalSaldo, totalEntrada)],
+      ['Faturamento',             fmtN(totalFat),   pctStr(totalFat,   base)],
+      ['Devolução Total',         fmtN(totalDev),   pctStr(totalDev,   base)],
+      ['  • Dev. Qualidade',      fmtN(devQual),    pctStr(devQual,    base)],
+      ['  • Dev. Processo',       fmtN(devProc),    pctStr(devProc,    base)],
+      ['  • Dev. Final Campanha', fmtN(devFinal),   pctStr(devFinal,   base)],
+      ['Sucata + Estopa',         fmtN(totalSuc),   pctStr(totalSuc,   base)],
+      ['  • Sucata',              fmtN(soSucata),   pctStr(soSucata,   base)],
+      ['  • Estopa',              fmtN(soEstopa),   pctStr(soEstopa,   base)],
+      ['Saldo em Estoque',        fmtN(totalSaldo), pctStr(totalSaldo, base)],
     ],
     headStyles: { fillColor: MED, textColor: WHITE, fontSize: 8 },
     bodyStyles: { fontSize: 8 },
@@ -873,7 +874,7 @@ export function gerarRelatorioPDF(nfs, saidas, mes, ano, config = {}) {
   pdoc.text('KPIs POR LOTE POY', W/2, y+5.5, { align: 'center' })
   y += 10
 
-  // Agrupa por lote
+  // Agrupa por lote — NFs e saídas do mesmo período filtrado
   const lotes = {}
   for (const nf of nfsFiltradas) {
     const k = nf.lote || '(sem lote)'
@@ -884,9 +885,9 @@ export function gerarRelatorioPDF(nfs, saidas, mes, ano, config = {}) {
     const k = s.lote_poy || s.lote_produto || '(sem lote)'
     if (!lotes[k]) lotes[k] = { entradaKg:0, fat:0, dev:0, suc:0 }
     const v = Number(s.volume_abatido_kg||0)
-    if (s.tipo_saida === 'faturamento')            lotes[k].fat += v
-    else if (s.tipo_saida?.startsWith('dev_'))     lotes[k].dev += v
-    else if (['sucata','estopa'].includes(s.tipo_saida)) lotes[k].suc += v
+    if (s.tipo_saida === 'faturamento')                   lotes[k].fat += v
+    else if (s.tipo_saida?.startsWith('dev_'))            lotes[k].dev += v
+    else if (['sucata','estopa'].includes(s.tipo_saida))  lotes[k].suc += v
   }
 
   const loteRows = Object.entries(lotes).sort((a,b) => b[1].entradaKg - a[1].entradaKg)
