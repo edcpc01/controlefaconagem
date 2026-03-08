@@ -687,28 +687,6 @@ export function gerarRomaneioPDF(saida, alocacoes, config = {}) {
 
 
 // ─────────────────────────────────────────────────────────────────
-// INVENTÁRIO FÍSICO
-// ─────────────────────────────────────────────────────────────────
-
-export async function salvarInventario(payload, usuario) {
-  const now = Timestamp.now()
-  const ref = await addDoc(collection(db, 'inventario'), {
-    ...payload,
-    criado_em: now,
-    usuario_email: usuario?.email || '',
-  })
-  await registrarLog('INVENTARIO_CRIADO', `Inventário registrado para NF ${payload.numero_nf}`, usuario)
-  return ref.id
-}
-
-export async function listarInventarios(unidadeId = '') {
-  const snap = await getDocs(query(collection(db, 'inventario'), orderBy('criado_em', 'desc')))
-  const todos = snap.docs.map(d => ({ id: d.id, ...d.data(), criado_em: tsToDateTime(d.data().criado_em) }))
-  if (!unidadeId) return todos
-  return todos.filter(i => (i.unidade_id || '') === unidadeId)
-}
-
-// ─────────────────────────────────────────────────────────────────
 // HISTÓRICO DE EDIÇÕES DE NF
 // ─────────────────────────────────────────────────────────────────
 
