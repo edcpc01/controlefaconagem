@@ -234,14 +234,6 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
-        Área A (linha 1, col 1): NFs Recentes — Saldo
-        Área B (linha 1, col 2): Últimas Saídas
-        Área C (linha 2, col 1): Entradas por Lote POY
-        Área D (linha 2, col 2): Saídas por Lote POY
-
-        grid-template-rows: auto auto
-        Linha 1 usa "1fr" → ambos os cards A e B ficam com mesma altura
-      */}
       <div className="dash-grid">
 
         {/* A — NFs Recentes */}

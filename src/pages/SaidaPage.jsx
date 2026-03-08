@@ -227,9 +227,89 @@ export default function SaidaPage() {
   const [offlineQueue, setOfflineQueue] = useState(getQueue())
   const [sincronizando, setSincronizando] = useState(false)
 
-  // Modo lote
-  const [modoLote, setModoLote]       = useState(false)
-  const [lote, setLote]               = useState([]) // [{form, volumeAbatido}]
+  // Modo lote — nova implementação
+  const [aba, setAba]                     = useState('simples') // 'simples' | 'lote'
+  const [loteForm, setLoteForm]           = useState({ tipo_saida: '', lote_poy: '', codigo_material: '', lote_acabado: '' })
+  const [loteLinhas, setLoteLinhas]       = useState([]) // [{nf, romaneio, volume_liquido_kg, incluir}]
+  const [loteLoading, setLoteLoading]     = useState(false)
+  const [loteResultados, setLoteResultados] = useState([]) // romaneios gerados
+
+  // Lotes únicos disponíveis nas NFs com saldo
+  const lotesDisponiveis = useMemo(() => {
+    const s = new Set(nfs.filter(n => Number(n.volume_saldo_kg) > 0.01).map(n => n.lote || ''))
+    return [...s].filter(Boolean).sort()
+  }, [nfs])
+
+  // Carrega NFs do lote selecionado
+  useEffect(() => {
+    if (!loteForm.lote_poy) { setLoteLinhas([]); return }
+    const nfsDolote = nfs.filter(n => {
+      const loteNF = String(n.lote || '').substring(0, 4)
+      const loteSel = String(loteForm.lote_poy).substring(0, 4)
+      if (loteNF !== loteSel) return false
+      if (loteForm.codigo_material && n.codigo_material !== loteForm.codigo_material) return false
+      return Number(n.volume_saldo_kg) > 0.01
+    })
+    setLoteLinhas(nfsDolote.map(nf => ({
+      nf,
+      romaneio: '',
+      volume_liquido_kg: '',
+      incluir: true,
+    })))
+  }, [loteForm.lote_poy, loteForm.codigo_material, nfs])
+
+  const setLinha = (idx, campo, valor) => {
+    setLoteLinhas(ls => ls.map((l, i) => i === idx ? { ...l, [campo]: valor } : l))
+  }
+
+  const handleGerarLote = async () => {
+    const linhasAtivas = loteLinhas.filter(l => l.incluir && Number(l.volume_liquido_kg) > 0)
+    if (!loteForm.tipo_saida) { toast('Selecione o tipo de saída.', 'error'); return }
+    if (linhasAtivas.length === 0) { toast('Nenhuma linha com volume preenchido.', 'error'); return }
+    const semRomaneio = linhasAtivas.filter(l => !l.romaneio.trim())
+    if (semRomaneio.length > 0) { toast('Preencha o número do romaneio em todas as linhas incluídas.', 'error'); return }
+
+    setLoteLoading(true)
+    const resultados = []
+    const erros = []
+
+    for (const linha of linhasAtivas) {
+      const volLiq = parseFloat(linha.volume_liquido_kg)
+      const payload = {
+        romaneio_microdata: linha.romaneio.trim(),
+        codigo_material:    linha.nf.codigo_material || '',
+        lote_poy:           loteForm.lote_poy,
+        lote_acabado:       loteForm.lote_acabado.trim() || '',
+        tipo_saida:         loteForm.tipo_saida,
+        volume_liquido_kg:  volLiq,
+        volume_bruto_kg:    null,
+        quantidade:         null,
+        unidade_id:         unidadeAtiva || '',
+      }
+      try {
+        const res = await criarSaida(payload, user)
+        resultados.push({ romaneio: linha.romaneio, nf: linha.nf.numero_nf, volLiq, res })
+      } catch (e) {
+        erros.push({ romaneio: linha.romaneio, erro: e.message })
+      }
+    }
+
+    setLoteLoading(false)
+    setLoteResultados(resultados)
+    if (resultados.length > 0) {
+      toast(`✅ ${resultados.length} romaneio(s) gerado(s) com sucesso!`)
+      load()
+    }
+    if (erros.length > 0) {
+      toast(`⚠️ ${erros.length} erro(s): ${erros.map(e => e.romaneio).join(', ')}`, 'error')
+    }
+  }
+
+  const resetLote = () => {
+    setLoteForm({ tipo_saida: '', lote_poy: '', codigo_material: '', lote_acabado: '' })
+    setLoteLinhas([])
+    setLoteResultados([])
+  }
 
   // Filtros
   const [fBusca, setFBusca] = useState('')
@@ -345,7 +425,6 @@ export default function SaidaPage() {
       setOfflineQueue(getQueue())
       setConfirmacao(null)
       setForm(EMPTY_FORM)
-      if (modoLote) setLote(l => [...l, { ...payload, _tmpId: Date.now() }])
       toast('📴 Sem internet — saída salva na fila offline!', 'warn')
       return
     }
@@ -354,30 +433,15 @@ export default function SaidaPage() {
     try {
       const resultado = await criarSaida(payload, user)
       setConfirmacao(null)
-
-      if (modoLote) {
-        // No modo lote: adiciona à lista e limpa só campos variáveis
-        setLote(l => [...l, { ...payload, id: resultado?.saidaId, _tmpId: Date.now() }])
-        setForm(f => ({ ...f, romaneio_microdata: '', tipo_saida: '', volume_liquido_kg: '', quantidade: '' }))
-        toast('✓ Romaneio adicionado ao lote!')
-      } else {
-        setUltimaSaida(resultado)
-        setForm(EMPTY_FORM)
-        load()
-      }
+      setUltimaSaida(resultado)
+      setForm(EMPTY_FORM)
+      load()
     } catch (e) {
       toast(e.message || 'Erro ao registrar saída.', 'error')
       setConfirmacao(null)
     } finally {
       setLoading(false)
     }
-  }
-
-  const handleFinalizarLote = () => {
-    setModoLote(false)
-    setLote([])
-    load()
-    toast(`✅ Lote com ${lote.length} romaneio(s) registrado(s) com sucesso!`)
   }
 
   const handleGerarPDF = (saida, alocacoes) => {
@@ -447,48 +511,30 @@ export default function SaidaPage() {
           <div className="page-title"><span>↑</span> Saída de Material</div>
           <div className="page-sub">Registro de saídas com abatimento 1,5% e alocação FIFO</div>
         </div>
-        <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
-          <button className={`btn btn-sm ${modoLote ? 'btn-primary' : 'btn-ghost'}`}
-            onClick={() => { setModoLote(o => !o); setLote([]) }}>
-            {modoLote ? '✕ Cancelar Lote' : '📦 Modo Lote'}
-          </button>
-          <button className="btn btn-ghost" onClick={() => { exportarExcel(nfs, saidas); toast('Exportação concluída!') }}>
-            📊 Excel
-          </button>
-        </div>
+        <button className="btn btn-ghost" onClick={() => { exportarExcel(nfs, saidas); toast('Exportação concluída!') }}>
+          📊 Excel
+        </button>
       </div>
 
       {/* Banner offline */}
       {!isOnline && (
-        <div style={{
-          background: 'rgba(255,180,0,0.12)', border: '1px solid var(--warn)',
-          borderRadius: 10, padding: '10px 16px', marginBottom: 16,
-          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'
-        }}>
-          <span style={{fontSize: 20}}>📴</span>
-          <div style={{flex: 1}}>
-            <div style={{fontWeight: 700, color: 'var(--warn)', fontSize: 13}}>Modo Offline</div>
-            <div style={{fontSize: 12, color: 'var(--text-dim)'}}>As saídas serão salvas localmente e sincronizadas ao reconectar.</div>
+        <div style={{ background:'rgba(255,180,0,0.12)', border:'1px solid var(--warn)', borderRadius:10, padding:'10px 16px', marginBottom:16, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+          <span style={{fontSize:20}}>📴</span>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:700, color:'var(--warn)', fontSize:13}}>Modo Offline</div>
+            <div style={{fontSize:12, color:'var(--text-dim)'}}>As saídas serão salvas localmente e sincronizadas ao reconectar.</div>
           </div>
-          {offlineQueue.length > 0 && (
-            <span style={{background: 'var(--warn)', color: '#000', borderRadius: 12, padding: '2px 10px', fontSize: 12, fontWeight: 700}}>
-              {offlineQueue.length} na fila
-            </span>
-          )}
+          {offlineQueue.length > 0 && <span style={{background:'var(--warn)', color:'#000', borderRadius:12, padding:'2px 10px', fontSize:12, fontWeight:700}}>{offlineQueue.length} na fila</span>}
         </div>
       )}
 
       {/* Banner sincronização */}
       {isOnline && offlineQueue.length > 0 && (
-        <div style={{
-          background: 'rgba(0,195,100,0.1)', border: '1px solid var(--accent-2)',
-          borderRadius: 10, padding: '10px 16px', marginBottom: 16,
-          display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap'
-        }}>
-          <span style={{fontSize: 20}}>🔄</span>
-          <div style={{flex: 1}}>
-            <div style={{fontWeight: 700, color: 'var(--accent-2)', fontSize: 13}}>Fila Pendente</div>
-            <div style={{fontSize: 12, color: 'var(--text-dim)'}}>{offlineQueue.length} saída(s) aguardando sincronização.</div>
+        <div style={{ background:'rgba(0,195,100,0.1)', border:'1px solid var(--accent-2)', borderRadius:10, padding:'10px 16px', marginBottom:16, display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+          <span style={{fontSize:20}}>🔄</span>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:700, color:'var(--accent-2)', fontSize:13}}>Fila Pendente</div>
+            <div style={{fontSize:12, color:'var(--text-dim)'}}>{offlineQueue.length} saída(s) aguardando sincronização.</div>
           </div>
           <button className="btn btn-primary btn-sm" onClick={sincronizarFila} disabled={sincronizando}>
             {sincronizando ? '⏳ Sincronizando...' : '↑ Sincronizar Agora'}
@@ -496,34 +542,22 @@ export default function SaidaPage() {
         </div>
       )}
 
-      {/* Painel de lote em andamento */}
-      {modoLote && lote.length > 0 && (
-        <div className="card" style={{marginBottom: 16, borderColor: 'var(--accent)'}}>
-          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom: 12}}>
-            <div className="card-title" style={{margin: 0}}>📦 Romaneios do Lote ({lote.length})</div>
-            <button className="btn btn-primary btn-sm" onClick={handleFinalizarLote}>
-              ✓ Finalizar Lote
-            </button>
-          </div>
-          <div style={{display:'flex', flexDirection:'column', gap:6}}>
-            {lote.map((item, i) => (
-              <div key={item._tmpId} style={{
-                display:'flex', justifyContent:'space-between', alignItems:'center',
-                background:'rgba(255,255,255,0.04)', borderRadius:8, padding:'8px 12px', fontSize:13
-              }}>
-                <span style={{color:'var(--text-dim)', marginRight:8}}>#{i+1}</span>
-                <span className="td-mono" style={{fontWeight:600, flex:1}}>{item.romaneio_microdata}</span>
-                <span style={{marginRight:8}}>{TIPOS_SAIDA.find(t=>t.value===item.tipo_saida)?.label}</span>
-                <span className="td-mono" style={{color:'var(--accent)'}}>{fmt(calcularVolumeAbatido(item.volume_liquido_kg, item.tipo_saida))} kg</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* ── Tabs ── */}
+      <div style={{display:'flex', gap:0, marginBottom:20, borderBottom:'1px solid var(--border)'}}>
+        {[{k:'simples', label:'➕ Saída Individual'}, {k:'lote', label:'📦 Saída em Lote'}].map(t => (
+          <button key={t.k} onClick={() => setAba(t.k)} style={{
+            padding:'10px 20px', background:'none', border:'none', cursor:'pointer', fontSize:13, fontWeight:600,
+            color: aba === t.k ? 'var(--accent)' : 'var(--text-dim)',
+            borderBottom: aba === t.k ? '2px solid var(--accent)' : '2px solid transparent',
+            marginBottom: -1,
+          }}>{t.label}</button>
+        ))}
+      </div>
 
-      {/* ── Formulário ── */}
-      <div className="card" style={{marginBottom:24}}>
-        <div className="card-title">{modoLote ? `📦 Modo Lote — Romaneio #${lote.length + 1}` : 'Registrar Nova Saída'}</div>
+      {/* ── ABA: SAÍDA INDIVIDUAL ── */}
+      {aba === 'simples' && (
+        <div className="card" style={{marginBottom:24}}>
+          <div className="card-title">Registrar Nova Saída</div>
 
         {/* LINHA 1 — 4 obrigatórios */}
         <div className="form-grid-4" style={{marginBottom:14}}>
@@ -655,6 +689,194 @@ export default function SaidaPage() {
           </button>
         </div>
       </div>
+      )} {/* fim aba simples */}
+
+      {/* ── ABA: SAÍDA EM LOTE ── */}
+      {aba === 'lote' && (
+        <div className="card" style={{marginBottom:24}}>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16}}>
+            <div className="card-title" style={{margin:0}}>📦 Saída em Lote — múltiplos romaneios</div>
+            <button className="btn btn-ghost btn-sm" onClick={resetLote}>↺ Limpar</button>
+          </div>
+
+          {/* Configuração do lote */}
+          <div className="form-grid-4" style={{marginBottom:16}}>
+            <div className="form-group">
+              <label className="form-label">Lote POY *</label>
+              <select className="form-select" value={loteForm.lote_poy}
+                onChange={e => setLoteForm(f => ({...f, lote_poy: e.target.value}))}>
+                <option value="">Selecione o lote...</option>
+                {lotesDisponiveis.map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Tipo de Saída *</label>
+              <select className="form-select" value={loteForm.tipo_saida}
+                onChange={e => setLoteForm(f => ({...f, tipo_saida: e.target.value}))}>
+                <option value="">Selecione o tipo...</option>
+                {TIPOS_SAIDA.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Lote Acabado</label>
+              <input className="form-input" placeholder="Opcional" value={loteForm.lote_acabado}
+                onChange={e => setLoteForm(f => ({...f, lote_acabado: e.target.value}))} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Filtrar Cód. Material</label>
+              <input className="form-input" placeholder="Ex: 140911" value={loteForm.codigo_material}
+                onChange={e => setLoteForm(f => ({...f, codigo_material: e.target.value}))} />
+            </div>
+          </div>
+
+          {/* Aviso abatimento */}
+          {loteForm.tipo_saida && TIPOS_COM_ABATIMENTO.includes(loteForm.tipo_saida) && (
+            <div style={{background:'rgba(255,180,0,0.08)', border:'1px solid var(--warn)', borderRadius:8, padding:'8px 12px', fontSize:12, color:'var(--warn)', marginBottom:14}}>
+              ⚠️ Abatimento de 1,5% será aplicado automaticamente em todos os romaneios deste lote.
+            </div>
+          )}
+
+          {/* Sem lote selecionado */}
+          {!loteForm.lote_poy && (
+            <div className="empty" style={{padding:'30px 0'}}>
+              <div className="empty-icon">📦</div>
+              <div className="empty-text">Selecione o lote POY para carregar as NFs disponíveis</div>
+            </div>
+          )}
+
+          {/* Linhas de NFs */}
+          {loteLinhas.length === 0 && loteForm.lote_poy && (
+            <div className="empty" style={{padding:'20px 0'}}>
+              <div className="empty-icon">🔍</div>
+              <div className="empty-text">Nenhuma NF com saldo disponível para este lote</div>
+            </div>
+          )}
+
+          {loteLinhas.length > 0 && (
+            <>
+              <div style={{overflowX:'auto', marginBottom:16}}>
+                <table style={{width:'100%', borderCollapse:'collapse', fontSize:13}}>
+                  <thead>
+                    <tr style={{background:'rgba(255,255,255,0.04)'}}>
+                      <th style={{padding:'8px 10px', textAlign:'center', width:36}}>
+                        <input type="checkbox" checked={loteLinhas.every(l => l.incluir)}
+                          onChange={e => setLoteLinhas(ls => ls.map(l => ({...l, incluir: e.target.checked})))} />
+                      </th>
+                      <th style={{padding:'8px 10px', textAlign:'left', color:'var(--text-dim)', fontWeight:600}}>NF</th>
+                      <th style={{padding:'8px 10px', textAlign:'left', color:'var(--text-dim)', fontWeight:600}}>Emissão</th>
+                      <th style={{padding:'8px 10px', textAlign:'left', color:'var(--text-dim)', fontWeight:600}}>Cód.</th>
+                      <th style={{padding:'8px 10px', textAlign:'right', color:'var(--text-dim)', fontWeight:600}}>Saldo kg</th>
+                      <th style={{padding:'8px 10px', textAlign:'left', color:'var(--text-dim)', fontWeight:600}}>Romaneio *</th>
+                      <th style={{padding:'8px 10px', textAlign:'right', color:'var(--text-dim)', fontWeight:600}}>Vol. Líq. kg *</th>
+                      <th style={{padding:'8px 10px', textAlign:'right', color:'var(--text-dim)', fontWeight:600}}>Vol. Final kg</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loteLinhas.map((linha, idx) => {
+                      const volLiq = parseFloat(linha.volume_liquido_kg) || 0
+                      const volFinal = calcularVolumeAbatido(volLiq, loteForm.tipo_saida)
+                      const saldo = Number(linha.nf.volume_saldo_kg)
+                      const excede = volFinal > saldo + 0.01
+                      return (
+                        <tr key={linha.nf.id} style={{
+                          borderBottom:'1px solid rgba(255,255,255,0.05)',
+                          opacity: linha.incluir ? 1 : 0.4,
+                          background: excede ? 'rgba(255,60,60,0.06)' : undefined
+                        }}>
+                          <td style={{padding:'8px 10px', textAlign:'center'}}>
+                            <input type="checkbox" checked={linha.incluir}
+                              onChange={e => setLinha(idx, 'incluir', e.target.checked)} />
+                          </td>
+                          <td style={{padding:'8px 10px', fontWeight:700, fontFamily:'monospace'}}>{linha.nf.numero_nf}</td>
+                          <td style={{padding:'8px 10px', fontSize:12, color:'var(--text-dim)'}}>
+                            {linha.nf.data_emissao ? new Date(linha.nf.data_emissao).toLocaleDateString('pt-BR') : '—'}
+                          </td>
+                          <td style={{padding:'8px 10px', fontSize:12}}>{linha.nf.codigo_material || '—'}</td>
+                          <td style={{padding:'8px 10px', textAlign:'right', color:'var(--accent-2)', fontWeight:600, fontFamily:'monospace'}}>
+                            {fmt(saldo)}
+                            <button title="Usar saldo total" style={{marginLeft:6, background:'none', border:'none', cursor:'pointer', fontSize:10, color:'var(--accent)', padding:0}}
+                              onClick={() => {
+                                const temAbat = TIPOS_COM_ABATIMENTO.includes(loteForm.tipo_saida)
+                                const liq = temAbat ? (saldo / (1 - 0.015)).toFixed(3) : saldo.toFixed(3)
+                                setLinha(idx, 'volume_liquido_kg', liq)
+                              }}>↓max</button>
+                          </td>
+                          <td style={{padding:'6px 10px'}}>
+                            <input
+                              className="form-input"
+                              style={{width:130, fontFamily:'monospace', borderColor: excede ? 'var(--danger)' : undefined}}
+                              placeholder="Ex: 122041"
+                              value={linha.romaneio}
+                              disabled={!linha.incluir}
+                              onChange={e => setLinha(idx, 'romaneio', e.target.value)}
+                            />
+                          </td>
+                          <td style={{padding:'6px 10px'}}>
+                            <input
+                              className="form-input"
+                              type="number" step="0.001" min="0"
+                              style={{width:110, textAlign:'right', fontFamily:'monospace', borderColor: excede ? 'var(--danger)' : undefined}}
+                              placeholder="0,000"
+                              value={linha.volume_liquido_kg}
+                              disabled={!linha.incluir}
+                              onChange={e => setLinha(idx, 'volume_liquido_kg', e.target.value)}
+                            />
+                          </td>
+                          <td style={{padding:'8px 10px', textAlign:'right', fontFamily:'monospace', fontWeight:600, color: excede ? 'var(--danger)' : 'var(--accent)'}}>
+                            {volLiq > 0 ? fmt(volFinal) : '—'}
+                            {excede && <div style={{fontSize:10, color:'var(--danger)'}}>excede saldo</div>}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{borderTop:'2px solid var(--border)', background:'rgba(255,255,255,0.03)'}}>
+                      <td colSpan={6} style={{padding:'8px 10px', fontSize:12, color:'var(--text-dim)'}}>
+                        {loteLinhas.filter(l => l.incluir && parseFloat(l.volume_liquido_kg) > 0).length} romaneio(s) a gerar
+                      </td>
+                      <td style={{padding:'8px 10px', textAlign:'right', fontFamily:'monospace', fontWeight:700}}>
+                        {fmt(loteLinhas.filter(l=>l.incluir).reduce((a,l) => a + (parseFloat(l.volume_liquido_kg)||0), 0))}
+                      </td>
+                      <td style={{padding:'8px 10px', textAlign:'right', fontFamily:'monospace', fontWeight:700, color:'var(--accent)'}}>
+                        {fmt(loteLinhas.filter(l=>l.incluir).reduce((a,l) => a + calcularVolumeAbatido(parseFloat(l.volume_liquido_kg)||0, loteForm.tipo_saida), 0))}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              <div style={{display:'flex', justifyContent:'flex-end', gap:10}}>
+                <button className="btn btn-ghost" onClick={resetLote}>↺ Recomeçar</button>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleGerarLote}
+                  disabled={loteLoading || !loteForm.tipo_saida || loteLinhas.filter(l=>l.incluir && parseFloat(l.volume_liquido_kg)>0).length === 0}
+                >
+                  {loteLoading ? '⏳ Gerando...' : `⚡ Gerar ${loteLinhas.filter(l=>l.incluir && parseFloat(l.volume_liquido_kg)>0).length} Romaneio(s)`}
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* Resultados */}
+          {loteResultados.length > 0 && (
+            <div style={{marginTop:20, background:'rgba(0,195,100,0.08)', border:'1px solid var(--accent-2)', borderRadius:10, padding:16}}>
+              <div style={{fontWeight:700, color:'var(--accent-2)', fontSize:14, marginBottom:12}}>
+                ✅ {loteResultados.length} romaneio(s) gerado(s) com sucesso!
+              </div>
+              {loteResultados.map((r, i) => (
+                <div key={i} style={{display:'flex', justifyContent:'space-between', fontSize:13, padding:'4px 0', borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
+                  <span style={{fontFamily:'monospace', fontWeight:600}}>{r.romaneio}</span>
+                  <span style={{color:'var(--text-dim)'}}>NF {r.nf}</span>
+                  <span style={{color:'var(--accent)', fontFamily:'monospace'}}>{fmt(calcularVolumeAbatido(r.volLiq, loteForm.tipo_saida))} kg</span>
+                </div>
+              ))}
+              <button className="btn btn-ghost btn-sm" style={{marginTop:12}} onClick={resetLote}>Novo lote</button>
+            </div>
+          )}
+        </div>
+      )} {/* fim aba lote */}
 
       {/* ── Filtros + Histórico ── */}
       <div className="card" style={{marginBottom:16, paddingBottom:0}}>
