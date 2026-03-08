@@ -955,3 +955,109 @@ export function gerarRelatorioPDF(nfs, saidas, mes, ano, config = {}) {
 
   pdoc.save(`relatorio_${ano}${mes ? '_' + String(mes).padStart(2,'0') : ''}.pdf`)
 }
+
+// ─────────────────────────────────────────────────────────────────
+// INVENTÁRIO FÍSICO
+// ─────────────────────────────────────────────────────────────────
+
+// Salva um inventário no Firestore
+export async function salvarInventario(unidadeId, linhas, usuario) {
+  const now = Timestamp.now()
+  const ref = await addDoc(collection(db, 'inventario'), {
+    unidade_id:  unidadeId,
+    criado_em:   now,
+    criado_por:  usuario?.email || '',
+    linhas: linhas.map(l => ({
+      lote:          l.lote,
+      saldo_teorico: l.saldo_teorico,
+      contagem_kg:   l.contagem_kg,
+      divergencia_kg: l.divergencia_kg,
+      divergencia_pct: l.divergencia_pct,
+    }))
+  })
+  await registrarLog(
+    'INVENTARIO_SALVO',
+    `Inventário com ${linhas.length} lotes — divergência total: ${linhas.reduce((a,l)=>a+Math.abs(l.divergencia_kg),0).toFixed(2)} kg`,
+    usuario
+  )
+  return ref.id
+}
+
+// Lista inventários históricos da unidade
+export async function listarInventarios(unidadeId) {
+  const snap = await getDocs(
+    query(collection(db, 'inventario'), orderBy('criado_em', 'desc'))
+  )
+  const todos = snap.docs.map(d => ({ id: d.id, ...d.data(), criado_em: tsToDateTime(d.data().criado_em) }))
+  if (!unidadeId) return todos
+  return todos.filter(i => (i.unidade_id || '') === unidadeId)
+}
+
+// Gera PDF do inventário
+export function gerarInventarioPDF(linhas, unidadeId, dataStr) {
+  const pdoc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+  const W = pdoc.internal.pageSize.width
+  const DARK = [15, 32, 60], MED = [30, 60, 114], WHITE = [255, 255, 255]
+
+  pdoc.setFillColor(...DARK); pdoc.rect(0, 0, W, 28, 'F')
+  pdoc.setTextColor(...WHITE)
+  pdoc.setFontSize(14); pdoc.setFont('helvetica', 'bold')
+  pdoc.text('RHODIA FAÇONAGEM — INVENTÁRIO FÍSICO', W/2, 11, { align: 'center' })
+  pdoc.setFontSize(9); pdoc.setFont('helvetica', 'normal')
+  pdoc.text(`Data: ${dataStr}  |  Unidade: ${unidadeId || 'Todas'}  |  Emitido em: ${format(new Date(), "dd/MM/yyyy 'às' HH:mm", {locale:ptBR})}`, W/2, 20, { align: 'center' })
+
+  const fmtN = n => Number(n||0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2})
+  const totalTeorico   = linhas.reduce((a,l) => a + l.saldo_teorico, 0)
+  const totalFisico    = linhas.reduce((a,l) => a + l.contagem_kg, 0)
+  const totalDiverg    = totalFisico - totalTeorico
+  const divergPct      = totalTeorico > 0 ? (totalDiverg / totalTeorico * 100) : 0
+
+  autoTable(pdoc, {
+    startY: 32, margin: { left: 10, right: 10 },
+    head: [['Lote POY', 'Saldo Teórico (kg)', 'Contagem Física (kg)', 'Divergência (kg)', 'Divergência (%)', 'Status']],
+    body: linhas.map(l => [
+      l.lote,
+      fmtN(l.saldo_teorico),
+      fmtN(l.contagem_kg),
+      (l.divergencia_kg >= 0 ? '+' : '') + fmtN(l.divergencia_kg),
+      (l.divergencia_pct >= 0 ? '+' : '') + Number(l.divergencia_pct).toFixed(2) + '%',
+      Math.abs(l.divergencia_pct) < 0.5 ? 'OK' : Math.abs(l.divergencia_pct) < 2 ? 'ATENÇÃO' : 'CRÍTICO'
+    ]),
+    foot: [[
+      'TOTAL',
+      fmtN(totalTeorico),
+      fmtN(totalFisico),
+      (totalDiverg >= 0 ? '+' : '') + fmtN(totalDiverg),
+      (divergPct >= 0 ? '+' : '') + divergPct.toFixed(2) + '%',
+      ''
+    ]],
+    headStyles: { fillColor: MED, textColor: WHITE, fontSize: 9, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 9 },
+    footStyles: { fillColor: DARK, textColor: WHITE, fontSize: 9, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [240, 246, 255] },
+    columnStyles: {
+      1: { halign: 'right' }, 2: { halign: 'right' },
+      3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'center' }
+    },
+    didParseCell(data) {
+      if (data.section === 'body' && data.column.index === 5) {
+        const v = data.cell.raw
+        if (v === 'CRÍTICO') data.cell.styles.textColor = [200, 30, 30]
+        else if (v === 'ATENÇÃO') data.cell.styles.textColor = [180, 120, 0]
+        else data.cell.styles.textColor = [0, 140, 70]
+      }
+      if (data.section === 'body' && data.column.index === 3) {
+        const raw = String(data.cell.raw)
+        if (raw.startsWith('-')) data.cell.styles.textColor = [200, 30, 30]
+        else if (raw.startsWith('+') && raw !== '+0,00') data.cell.styles.textColor = [0, 140, 70]
+      }
+    }
+  })
+
+  const pH = pdoc.internal.pageSize.height
+  pdoc.setFillColor(...DARK); pdoc.rect(0, pH-10, W, 10, 'F')
+  pdoc.setTextColor(...WHITE); pdoc.setFontSize(7)
+  pdoc.text('Rhodia — Controle de Façonagem', W/2, pH-3, { align: 'center' })
+
+  pdoc.save(`inventario_${format(new Date(), 'yyyy-MM-dd')}.pdf`)
+}
