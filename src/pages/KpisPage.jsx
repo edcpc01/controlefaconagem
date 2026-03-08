@@ -296,15 +296,7 @@ export default function KpisPage() {
               </div>
             )}
 
-            {totalSuc > 0 && (
-              <div style={{ background:'rgba(255,255,255,0.03)', borderRadius:10, padding:'10px 12px', border:'1px solid var(--border)' }}>
-                <div style={{ fontSize:11, fontWeight:600, color:'var(--danger)', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.05em' }}>↳ Sucata/Estopa</div>
-                <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-                  {soSucata > 0 && <KpiPill label="Sucata" kg={soSucata} pctVal={pct(soSucata, totalEntrada)} color="var(--danger)" />}
-                  {soEstopa > 0 && <KpiPill label="Estopa" kg={soEstopa} pctVal={pct(soEstopa, totalEntrada)} color="var(--warn)"   />}
-                </div>
-              </div>
-            )}
+
           </>
         )}
       </div>
