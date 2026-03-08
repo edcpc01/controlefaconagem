@@ -134,9 +134,16 @@ function LoteCardSaida({ grupo }) {
 export default function DashboardPage() {
   const navigate = useNavigate()
   const { unidadeAtiva } = useUser() || {}
+  const ctx = useUser()
+  const isAdmin = ctx?.isAdmin ?? false
   const [nfs,     setNfs]     = useState([])
   const [saidas,  setSaidas]  = useState([])
   const [loading, setLoading] = useState(true)
+
+  // Anomalia IA
+  const [anomaliaLoading, setAnomaliaLoading] = useState(false)
+  const [anomaliaResultado, setAnomaliaResultado] = useState(null) // null | {alertas:[], resumo:''}
+  const [anomaliaErro, setAnomaliaErro] = useState('')
 
   useEffect(() => {
     setLoading(true)
@@ -154,6 +161,78 @@ export default function DashboardPage() {
   const nfsAlerta    = nfs.filter(n => statusVencimentoNF(n) === 'alerta')
   const lotesEntrada = agruparPorLote(nfs)
   const lotesSaida   = agruparSaidasPorLote(saidas)
+
+  // Detecção de anomalia via IA
+  const analisarAnomalias = async () => {
+    if (saidas.length < 5) { setAnomaliaErro('Dados insuficientes (mínimo 5 saídas).'); return }
+    setAnomaliaLoading(true)
+    setAnomaliaResultado(null)
+    setAnomaliaErro('')
+    try {
+      // Calcula baseline: média e desvio dos últimos 60 dias por tipo
+      const agora = Date.now()
+      const saidas60 = saidas.filter(s => s.criado_em && (agora - new Date(s.criado_em)) < 60*24*60*60*1000)
+      const saidas7  = saidas.filter(s => s.criado_em && (agora - new Date(s.criado_em)) < 7*24*60*60*1000)
+
+      const estatsPorTipo = {}
+      for (const s of saidas60) {
+        const t = s.tipo_saida
+        if (!estatsPorTipo[t]) estatsPorTipo[t] = []
+        estatsPorTipo[t].push(Number(s.volume_abatido_kg || 0))
+      }
+      const baseline = Object.entries(estatsPorTipo).map(([tipo, vals]) => {
+        const media = vals.reduce((a,v)=>a+v,0) / vals.length
+        const std   = Math.sqrt(vals.reduce((a,v)=>a+(v-media)**2,0)/vals.length)
+        return { tipo, media: media.toFixed(2), desvio: std.toFixed(2), n: vals.length }
+      })
+
+      const resumoRecente = saidas7.map(s => ({
+        romaneio: s.romaneio_microdata,
+        tipo: s.tipo_saida,
+        lote: s.lote_poy || s.lote_produto || '—',
+        volume_kg: Number(s.volume_abatido_kg||0).toFixed(2),
+        data: s.criado_em ? new Date(s.criado_em).toLocaleString('pt-BR') : '—',
+      }))
+
+      const prompt = `Você é um sistema de detecção de anomalias para controle de façonagem (terceirização têxtil).
+
+BASELINE (últimos 60 dias) por tipo de saída:
+${JSON.stringify(baseline, null, 2)}
+
+SAÍDAS DOS ÚLTIMOS 7 DIAS:
+${JSON.stringify(resumoRecente, null, 2)}
+
+Analise se há anomalias nas saídas recentes comparando com o baseline.
+Considere anomalia: volume > média + 2× desvio, padrão incomum de tipo, lote não visto antes, horário atípico.
+
+Responda SOMENTE em JSON, sem texto extra, sem markdown:
+{
+  "alertas": [
+    { "nivel": "critico|atencao|info", "romaneio": "...", "motivo": "descrição curta em português" }
+  ],
+  "resumo": "frase curta de 1-2 linhas em português sobre o estado geral"
+}`
+
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1000,
+          messages: [{ role: 'user', content: prompt }]
+        })
+      })
+      const data = await res.json()
+      const texto = data.content?.find(b => b.type === 'text')?.text || ''
+      const clean = texto.replace(/```json|```/g, '').trim()
+      const parsed = JSON.parse(clean)
+      setAnomaliaResultado(parsed)
+    } catch (e) {
+      setAnomaliaErro('Erro ao analisar anomalias: ' + e.message)
+    } finally {
+      setAnomaliaLoading(false)
+    }
+  }
 
   if (loading) return <div className="loading"><div className="spinner"/><div>Carregando...</div></div>
 
@@ -234,6 +313,68 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+      {/* ── Detecção de anomalia (só admin) ── */}
+      {isAdmin && (
+        <div className="card" style={{ marginBottom:20, borderColor: anomaliaResultado?.alertas?.some(a=>a.nivel==='critico') ? 'var(--danger)' : 'var(--border)' }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:10 }}>
+            <div>
+              <div className="card-title" style={{ margin:0 }}>🤖 Detecção de Anomalias — IA</div>
+              <div style={{ fontSize:12, color:'var(--text-dim)', marginTop:2 }}>
+                Compara saídas recentes com o baseline histórico e identifica desvios
+              </div>
+            </div>
+            <button
+              className="btn btn-primary btn-sm"
+              onClick={analisarAnomalias}
+              disabled={anomaliaLoading}
+            >
+              {anomaliaLoading ? '⏳ Analisando...' : '⚡ Analisar Agora'}
+            </button>
+          </div>
+
+          {anomaliaErro && (
+            <div style={{ marginTop:12, padding:'8px 12px', background:'rgba(255,60,60,0.1)', borderRadius:8, color:'var(--danger)', fontSize:13 }}>
+              {anomaliaErro}
+            </div>
+          )}
+
+          {anomaliaResultado && (
+            <div style={{ marginTop:14 }}>
+              {/* Resumo geral */}
+              <div style={{ padding:'10px 14px', background:'rgba(255,255,255,0.04)', borderRadius:8, marginBottom:12, fontSize:13, color:'var(--text)', borderLeft:'3px solid var(--accent)' }}>
+                💬 {anomaliaResultado.resumo}
+              </div>
+
+              {anomaliaResultado.alertas.length === 0 ? (
+                <div style={{ fontSize:13, color:'var(--accent-2)', fontWeight:600 }}>✅ Nenhuma anomalia detectada nas últimas saídas.</div>
+              ) : (
+                <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                  {anomaliaResultado.alertas.map((a, i) => {
+                    const cor = a.nivel === 'critico' ? 'var(--danger)' : a.nivel === 'atencao' ? 'var(--warn)' : 'var(--accent)'
+                    const icon = a.nivel === 'critico' ? '🚨' : a.nivel === 'atencao' ? '⚠️' : 'ℹ️'
+                    return (
+                      <div key={i} style={{
+                        display:'flex', alignItems:'flex-start', gap:10, padding:'10px 14px',
+                        background:'rgba(255,255,255,0.03)', borderRadius:8,
+                        border:`1px solid ${cor}33`
+                      }}>
+                        <span style={{ fontSize:16 }}>{icon}</span>
+                        <div>
+                          <span style={{ fontWeight:700, color: cor, fontSize:13 }}>
+                            {a.romaneio}
+                          </span>
+                          <span style={{ fontSize:13, color:'var(--text)', marginLeft:8 }}>{a.motivo}</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="dash-grid">
 
         {/* A — NFs Recentes */}
