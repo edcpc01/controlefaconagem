@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { listarNFsEntrada, criarNFEntrada, editarNFEntrada, deletarNFEntrada, extrairDadosNFdoPDF, verificarNFDuplicada } from '../lib/faconagem'
+import { listarNFsEntrada, criarNFEntrada, editarNFEntrada, deletarNFEntrada, extrairDadosNFdoPDF, verificarNFDuplicada, statusVencimentoNF, diasParaVencimento } from '../lib/faconagem'
 import { useAuth } from '../lib/AuthContext'
 import { useUser } from '../lib/UserContext'
 import { format } from 'date-fns'
@@ -319,9 +319,17 @@ export default function EntradaPage() {
                 {nfs.length === 0 && (
                   <tr><td colSpan={8}><div className="empty"><div className="empty-icon">📦</div><div className="empty-text">Nenhuma NF cadastrada ainda</div></div></td></tr>
                 )}
-                {nfs.map(nf => (
-                  <tr key={nf.id}>
-                    <td className="td-mono" style={{fontWeight:600}}>{nf.numero_nf}</td>
+                {nfs.map(nf => {
+                  const statusV = statusVencimentoNF(nf)
+                  const dias    = diasParaVencimento(nf)
+                  const rowBg   = statusV === 'vencida' ? 'rgba(255,60,60,0.07)' : statusV === 'alerta' ? 'rgba(255,180,0,0.07)' : undefined
+                  return (
+                  <tr key={nf.id} style={{ background: rowBg }}>
+                    <td className="td-mono" style={{fontWeight:600}}>
+                      {nf.numero_nf}
+                      {statusV === 'vencida' && <span title={`Vencida há ${Math.abs(dias)} dias`} style={{marginLeft:5, cursor:'help'}}>🚨</span>}
+                      {statusV === 'alerta'  && <span title={`Vence em ${dias} dias`} style={{marginLeft:5, cursor:'help'}}>⚠️</span>}
+                    </td>
                     <td>{format(new Date(nf.data_emissao), 'dd/MM/yy')}</td>
                     <td className="col-hide-mobile">{nf.codigo_material}</td>
                     <td>{nf.lote}</td>
@@ -338,7 +346,8 @@ export default function EntradaPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                )})}
+
               </tbody>
             </table>
           </div>

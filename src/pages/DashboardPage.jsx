@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { listarNFsEntrada, listarSaidas, TIPOS_SAIDA } from '../lib/faconagem'
+import { listarNFsEntrada, listarSaidas, TIPOS_SAIDA, statusVencimentoNF, diasParaVencimento } from '../lib/faconagem'
 import { useUser } from '../lib/UserContext'
 import { format } from 'date-fns'
 
@@ -150,6 +150,8 @@ export default function DashboardPage() {
   const totalSaldo   = nfs.reduce((a,n) => a + Number(n.volume_saldo_kg), 0)
   const totalSaida   = saidas.reduce((a,s) => a + Number(s.volume_abatido_kg), 0)
   const nfsZeradas   = nfs.filter(n => Number(n.volume_saldo_kg) <= 0.01).length
+  const nfsVencidas  = nfs.filter(n => statusVencimentoNF(n) === 'vencida')
+  const nfsAlerta    = nfs.filter(n => statusVencimentoNF(n) === 'alerta')
   const lotesEntrada = agruparPorLote(nfs)
   const lotesSaida   = agruparSaidasPorLote(saidas)
 
@@ -186,8 +188,52 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/*
-        ── GRID DE 4 ÁREAS ──────────────────────────────────────────
+      {/* ── Alertas vencimento ── */}
+      {(nfsVencidas.length > 0 || nfsAlerta.length > 0) && (
+        <div className="card" style={{ marginBottom: 20, border: `1px solid ${nfsVencidas.length > 0 ? 'var(--danger)' : 'var(--warn)'}`, background: nfsVencidas.length > 0 ? 'rgba(255,60,60,0.06)' : 'rgba(255,180,0,0.06)' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:14 }}>
+            <span style={{ fontSize:22 }}>{nfsVencidas.length > 0 ? '🚨' : '⚠️'}</span>
+            <div>
+              <div style={{ fontWeight:700, fontSize:15, color: nfsVencidas.length > 0 ? 'var(--danger)' : 'var(--warn)' }}>
+                {nfsVencidas.length > 0
+                  ? `${nfsVencidas.length} NF${nfsVencidas.length > 1 ? 's' : ''} com prazo vencido`
+                  : `${nfsAlerta.length} NF${nfsAlerta.length > 1 ? 's' : ''} próximas do vencimento`}
+              </div>
+              <div style={{ fontSize:12, color:'var(--text-dim)' }}>NFs com saldo em aberto há mais de 6 meses devem ser verificadas</div>
+            </div>
+            <button className="btn btn-ghost btn-sm" style={{ marginLeft:'auto' }} onClick={() => navigate('/entrada')}>Ver NFs →</button>
+          </div>
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            {[...nfsVencidas, ...nfsAlerta].sort((a,b) => diasParaVencimento(a) - diasParaVencimento(b)).map(nf => {
+              const dias = diasParaVencimento(nf)
+              const vencida = dias < 0
+              return (
+                <div key={nf.id} style={{
+                  display:'flex', justifyContent:'space-between', alignItems:'center',
+                  background:'rgba(255,255,255,0.04)', borderRadius:10, padding:'10px 14px',
+                  border: `1px solid ${vencida ? 'rgba(255,60,60,0.3)' : 'rgba(255,180,0,0.3)'}`,
+                }}>
+                  <div>
+                    <span style={{ fontWeight:700, fontSize:14 }}>NF {nf.numero_nf}</span>
+                    <span style={{ fontSize:12, color:'var(--text-dim)', marginLeft:10 }}>
+                      Lote {nf.lote || '—'} · {nf.data_emissao ? new Date(nf.data_emissao).toLocaleDateString('pt-BR') : '—'}
+                    </span>
+                  </div>
+                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <span style={{ fontSize:12, fontWeight:600, color: vencida ? 'var(--danger)' : 'var(--warn)' }}>
+                      {vencida ? `Vencida há ${Math.abs(dias)} dia${Math.abs(dias)!==1?'s':''}` : `Vence em ${dias} dia${dias!==1?'s':''}`}
+                    </span>
+                    <span style={{ fontSize:13, color:'var(--accent-2)', fontWeight:600 }}>
+                      {Number(nf.volume_saldo_kg).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})} kg
+                    </span>
+                    <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/nf/${nf.id}`)}>🔍</button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
         Área A (linha 1, col 1): NFs Recentes — Saldo
         Área B (linha 1, col 2): Últimas Saídas
         Área C (linha 2, col 1): Entradas por Lote POY
