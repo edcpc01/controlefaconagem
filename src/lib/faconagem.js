@@ -544,7 +544,7 @@ export function exportarExcel(nfs, saidas) {
 // ROMANEIO PDF (com logo)
 // ─────────────────────────────────────────────────────────────────
 
-export function gerarRomaneioPDF(saida, alocacoes, config = {}) {
+function _buildRomaneioPDF(saida, alocacoes, config = {}) {
   const pdoc  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   const W     = 210
   const DARK  = [15, 40, 80]
@@ -681,7 +681,17 @@ export function gerarRomaneioPDF(saida, alocacoes, config = {}) {
   pdoc.setTextColor(...WHITE); pdoc.setFontSize(7); pdoc.setFont('helvetica', 'normal')
   pdoc.text('Rhodia — Sistema de Controle de Façonagem', W / 2, pH - 4, { align: 'center' })
 
+  return pdoc
+}
+
+export function gerarRomaneioPDF(saida, alocacoes, config = {}) {
+  const pdoc = _buildRomaneioPDF(saida, alocacoes, config)
   pdoc.save(`romaneio_${saida.romaneio_microdata}_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`)
+}
+
+export function gerarRomaneioBase64(saida, alocacoes, config = {}) {
+  const pdoc = _buildRomaneioPDF(saida, alocacoes, config)
+  return pdoc.output('datauristring').split(',')[1] // retorna base64 puro
 }
 
 
