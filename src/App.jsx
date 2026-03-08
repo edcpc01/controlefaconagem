@@ -13,6 +13,7 @@ import ConfigPage     from './pages/ConfigPage'
 import UsersPage      from './pages/UsersPage'
 import LoginPage      from './pages/LoginPage'
 import KpisPage       from './pages/KpisPage'
+import InventarioPage from './pages/InventarioPage'
 import './index.css'
 
 // ── PWA Install Banner ───────────────────────────────────────────
@@ -50,12 +51,13 @@ function PWAInstallBanner() {
 }
 
 const NAV_BASE = [
-  { to: '/',        label: 'Dashboard',  icon: '◈', end: true },
-  { to: '/entrada', label: 'NF Entrada', icon: '↓' },
-  { to: '/saida',   label: 'Saída',      icon: '↑' },
-  { to: '/kpis',    label: 'KPIs',       icon: '📊' },
-  { to: '/log',     label: 'Histórico',  icon: '📋' },
-  { to: '/config',  label: 'Config',     icon: '⚙' },
+  { to: '/',           label: 'Dashboard',  icon: '◈', end: true },
+  { to: '/entrada',    label: 'NF Entrada', icon: '↓' },
+  { to: '/saida',      label: 'Saída',      icon: '↑' },
+  { to: '/kpis',       label: 'KPIs',       icon: '📊' },
+  { to: '/inventario', label: 'Inventário', icon: '🔍' },
+  { to: '/log',        label: 'Histórico',  icon: '📋' },
+  { to: '/config',     label: 'Config',     icon: '⚙' },
 ]
 
 // ── Seletor de Unidade no header ─────────────────────────────────
@@ -219,7 +221,8 @@ function ProtectedApp() {
           <Route path="/entrada"  element={<EntradaPage />} />
           <Route path="/nf/:id"   element={<NFDetailPage />} />
           <Route path="/saida"    element={<SaidaPage />} />
-          <Route path="/kpis"     element={<KpisPage />} />
+          <Route path="/kpis"       element={<KpisPage />} />
+          <Route path="/inventario" element={<InventarioPage />} />
           <Route path="/log"      element={<LogPage />} />
           <Route path="/config"   element={<ConfigPage />} />
           <Route path="/usuarios" element={<UsersPage />} />
