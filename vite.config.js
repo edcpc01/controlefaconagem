@@ -9,7 +9,7 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       includeAssets: ['favicon.ico', 'icon-192.png', 'icon-512.png'],
       manifest: {
         name: 'Façonagem Rhodia - Controle de Entradas e Saídas',
@@ -27,12 +27,13 @@ export default defineConfig({
         ]
       },
       workbox: {
-        // Cache versionado: cada build gera novo hash → browser instala automaticamente
         cacheId: `faconagem-v${BUILD_VERSION}`,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         cleanupOutdatedCaches: true,
-        skipWaiting: true,
+        skipWaiting: false,
         clientsClaim: true,
+        additionalManifestEntries: [],
+        importScripts: ['/sw-custom.js'],
         runtimeCaching: [
           {
             // Firebase Firestore
