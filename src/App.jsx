@@ -17,7 +17,73 @@ import InventarioPage from './pages/InventarioPage'
 import MapaCalorPage  from './pages/MapaCalorPage'
 import './index.css'
 
-// ── PWA Install Banner ───────────────────────────────────────────
+// ── PWA Update Banner ────────────────────────────────────────────
+function PWAUpdateBanner() {
+  const [needsUpdate, setNeedsUpdate] = useState(false)
+  const [registration, setRegistration] = useState(null)
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return
+    navigator.serviceWorker.ready.then(reg => {
+      setRegistration(reg)
+      // Já tem um SW esperando? (update chegou antes do banner montar)
+      if (reg.waiting) { setNeedsUpdate(true); return }
+      // Escuta novas instalações
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing
+        if (!newWorker) return
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            setNeedsUpdate(true)
+          }
+        })
+      })
+    })
+    // Escuta mensagem do SW avisando que está pronto
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      window.location.reload()
+    })
+  }, [])
+
+  const handleUpdate = () => {
+    if (registration?.waiting) {
+      registration.waiting.postMessage({ type: 'SKIP_WAITING' })
+    }
+    setNeedsUpdate(false)
+  }
+
+  if (!needsUpdate) return null
+
+  return (
+    <div style={{
+      position: 'fixed', bottom: 80, left: '50%', transform: 'translateX(-50%)',
+      zIndex: 9999, display: 'flex', alignItems: 'center', gap: 12,
+      background: 'var(--accent)', color: '#fff',
+      borderRadius: 12, padding: '12px 20px',
+      boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
+      fontSize: 13, fontWeight: 600,
+      animation: 'slideUp 0.3s ease',
+      whiteSpace: 'nowrap',
+    }}>
+      <span>🚀 Nova versão disponível!</span>
+      <button
+        onClick={handleUpdate}
+        style={{
+          background: '#fff', color: 'var(--accent)',
+          border: 'none', borderRadius: 8,
+          padding: '6px 14px', fontWeight: 700,
+          fontSize: 12, cursor: 'pointer',
+        }}
+      >
+        Atualizar agora
+      </button>
+      <button
+        onClick={() => setNeedsUpdate(false)}
+        style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: 16, padding: 0 }}
+      >✕</button>
+    </div>
+  )
+}
 function PWAInstallBanner() {
   const [prompt, setPrompt] = useState(null)
   const [visible, setVisible] = useState(false)
@@ -257,6 +323,7 @@ function ProtectedApp() {
         </Routes>
       </Layout>
       <PWAInstallBanner />
+      <PWAUpdateBanner />
     </>
   )
 }
