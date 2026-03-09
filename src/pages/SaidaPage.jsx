@@ -142,7 +142,7 @@ function ConfirmacaoModal({ form, preview, onConfirm, onCancel, loading }) {
 }
 
 // ── Modal de Sucesso ───────────────────────────────────────────────────────
-function SucessoModal({ ultimaSaida, onClose, onPDF, onEmail, emailLoading }) {
+function SucessoModal({ ultimaSaida, onClose, onPDF }) {
   const s = ultimaSaida.saida
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -200,9 +200,6 @@ function SucessoModal({ ultimaSaida, onClose, onPDF, onEmail, emailLoading }) {
 
         <div className="modal-actions">
           <button className="btn btn-ghost" onClick={onClose}>Fechar</button>
-          <button className="btn btn-ghost" onClick={onEmail} disabled={emailLoading}>
-            {emailLoading ? '⏳ Enviando...' : '📧 Enviar por E-mail'}
-          </button>
           <button className="btn btn-success" onClick={onPDF}>📄 Gerar PDF</button>
         </div>
       </div>
@@ -940,13 +937,6 @@ export default function SaidaPage() {
               ))}
               <div style={{display:'flex', gap:8, marginTop:12, flexWrap:'wrap'}}>
                 <button className="btn btn-ghost btn-sm" onClick={resetLote}>Novo lote</button>
-                <button
-                  className="btn btn-ghost btn-sm"
-                  onClick={handleEmailLote}
-                  disabled={emailLoading}
-                >
-                  {emailLoading ? '⏳ Enviando...' : '📧 Enviar PDFs por E-mail'}
-                </button>
               </div>
             </div>
           )}
@@ -1052,8 +1042,6 @@ export default function SaidaPage() {
           ultimaSaida={ultimaSaida}
           onClose={() => setUltimaSaida(null)}
           onPDF={() => handleGerarPDF(ultimaSaida.saida, ultimaSaida.alocacoes)}
-          onEmail={handleEmailIndividual}
-          emailLoading={emailLoading}
         />
       )}
 
