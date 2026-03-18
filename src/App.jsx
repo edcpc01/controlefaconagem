@@ -169,7 +169,8 @@ function Layout({ children }) {
   const { theme, toggle }       = useTheme()
   const { user, logout }        = useAuth()
   const ctx                     = useUser()
-  const isAdmin                 = ctx?.isAdmin ?? false
+  const isAdmin      = ctx?.isAdmin ?? false
+  const isSupervisor = ctx?.isSupervisor ?? false
   const [nfsAlertaCount, setNfsAlertaCount] = useState(0)
 
   // Carrega badge de vencimento + dispara notificação push ao abrir
@@ -205,8 +206,19 @@ function Layout({ children }) {
     }).catch(() => {})
   }, [ctx?.unidadeAtiva])
 
+  const NAV_SUPERVISOR = [
+    { to: '/',           label: 'Dashboard',  icon: '◈', end: true },
+    { to: '/entrada',    label: 'NF Entrada', icon: '↓' },
+    { to: '/kpis',       label: 'KPIs',       icon: '📊' },
+    { to: '/inventario', label: 'Inventário', icon: '🔍' },
+    { to: '/mapa',       label: 'Mapa',       icon: '🌡️' },
+    { to: '/log',        label: 'Histórico',  icon: '📋' },
+  ]
+
   const navItems = isAdmin
     ? [...NAV_BASE, { to: '/usuarios', label: 'Usuários', icon: '👥' }]
+    : isSupervisor
+    ? NAV_SUPERVISOR
     : NAV_BASE
 
   const badgeFor = (to) => {
@@ -250,7 +262,7 @@ function Layout({ children }) {
             <button className="btn-theme-icon" onClick={toggle} title="Alternar tema">
               {theme === 'dark' ? '☀' : '🌙'}
             </button>
-            <div className="user-chip" title={`${ctx?.perfil?.role === 'admin' ? 'Admin' : 'Analista'} — ${user?.email}`}>
+            <div className="user-chip" title={`${ctx?.perfil?.role === 'admin' ? 'Admin' : ctx?.perfil?.role === 'supervisor' ? 'Supervisor' : 'Analista'} — ${user?.email}`}>
               {user?.photoURL
                 ? <img src={user.photoURL} alt="" style={{ width: 26, height: 26, borderRadius: '50%' }} />
                 : <span style={{ fontSize: 13 }}>{(user?.displayName || user?.email || '?')[0].toUpperCase()}</span>
@@ -293,6 +305,7 @@ function ProtectedApp() {
   const { user }           = useAuth()
   const ctx                = useUser()
   const loadingPerfil      = ctx?.loadingPerfil ?? true
+  const isSupervisor       = ctx?.isSupervisor ?? false
 
   // Auth loading
   if (user === undefined || (user !== null && loadingPerfil)) {
@@ -312,13 +325,13 @@ function ProtectedApp() {
           <Route path="/"         element={<DashboardPage />} />
           <Route path="/entrada"  element={<EntradaPage />} />
           <Route path="/nf/:id"   element={<NFDetailPage />} />
-          <Route path="/saida"    element={<SaidaPage />} />
+          <Route path="/saida"    element={isSupervisor ? <Navigate to="/" replace /> : <SaidaPage />} />
           <Route path="/kpis"       element={<KpisPage />} />
           <Route path="/inventario" element={<InventarioPage />} />
           <Route path="/mapa"       element={<MapaCalorPage />} />
           <Route path="/log"      element={<LogPage />} />
           <Route path="/config"   element={<ConfigPage />} />
-          <Route path="/usuarios" element={<UsersPage />} />
+          <Route path="/usuarios" element={isSupervisor ? <Navigate to="/" replace /> : <UsersPage />} />
           <Route path="*"         element={<Navigate to="/" replace />} />
         </Routes>
       </Layout>
