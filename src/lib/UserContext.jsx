@@ -57,7 +57,7 @@ export function UserProvider({ children, firebaseUser }) {
       init = false
       setPerfil(p)
 
-      // Analista sempre usa a unidade do seu perfil
+      // Analista e supervisor sempre usam a unidade do seu perfil
       if (p.role !== 'admin' && p.unidade_id) {
         setUnidadeAtiva(p.unidade_id)
         sessionStorage.setItem('unidade_ativa', p.unidade_id)
@@ -71,7 +71,8 @@ export function UserProvider({ children, firebaseUser }) {
     return unsub
   }, [firebaseUser?.uid])
 
-  const isAdmin = perfil?.role === 'admin'
+  const isAdmin      = perfil?.role === 'admin'
+  const isSupervisor = perfil?.role === 'supervisor'
 
   const trocarUnidade = (id) => {
     if (!isAdmin) return   // só admin pode trocar
@@ -90,7 +91,7 @@ export function UserProvider({ children, firebaseUser }) {
 
   return (
     <UserContext.Provider value={{
-      perfil, isAdmin, unidadeAtiva, loadingPerfil,
+      perfil, isAdmin, isSupervisor, unidadeAtiva, loadingPerfil,
       trocarUnidade, atualizarUsuario, listarUsuarios,
     }}>
       {children}
