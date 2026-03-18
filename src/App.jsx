@@ -209,10 +209,12 @@ function Layout({ children }) {
   const NAV_SUPERVISOR = [
     { to: '/',           label: 'Dashboard',  icon: '◈', end: true },
     { to: '/entrada',    label: 'NF Entrada', icon: '↓' },
+    { to: '/saida',      label: 'Saída',      icon: '↑' },
     { to: '/kpis',       label: 'KPIs',       icon: '📊' },
     { to: '/inventario', label: 'Inventário', icon: '🔍' },
     { to: '/mapa',       label: 'Mapa',       icon: '🌡️' },
     { to: '/log',        label: 'Histórico',  icon: '📋' },
+    { to: '/config',     label: 'Config',     icon: '⚙' },
   ]
 
   const navItems = isAdmin
@@ -325,7 +327,7 @@ function ProtectedApp() {
           <Route path="/"         element={<DashboardPage />} />
           <Route path="/entrada"  element={<EntradaPage />} />
           <Route path="/nf/:id"   element={<NFDetailPage />} />
-          <Route path="/saida"    element={isSupervisor ? <Navigate to="/" replace /> : <SaidaPage />} />
+          <Route path="/saida"    element={<SaidaPage />} />
           <Route path="/kpis"       element={<KpisPage />} />
           <Route path="/inventario" element={<InventarioPage />} />
           <Route path="/mapa"       element={<MapaCalorPage />} />
