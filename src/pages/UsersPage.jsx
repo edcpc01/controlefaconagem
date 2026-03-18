@@ -7,9 +7,9 @@ function Toast({ toasts }) {
 }
 
 function RoleBadge({ role }) {
-  return role === 'admin'
-    ? <span className="badge badge-blue">Admin</span>
-    : <span className="badge badge-green">Analista</span>
+  if (role === 'admin')      return <span className="badge badge-blue">Admin</span>
+  if (role === 'supervisor') return <span className="badge badge-warn">Supervisor</span>
+  return <span className="badge badge-green">Analista</span>
 }
 
 export default function UsersPage() {
@@ -87,7 +87,7 @@ export default function UsersPage() {
       {/* Regras resumidas */}
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-title">Níveis de Acesso</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
           <div style={{ padding: '14px 16px', background: 'rgba(34,85,184,0.12)', borderRadius: 8, border: '1px solid rgba(34,85,184,0.25)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <RoleBadge role="admin" />
@@ -96,8 +96,19 @@ export default function UsersPage() {
             <ul style={{ margin: 0, padding: '0 0 0 16px', color: 'var(--text-dim)', fontSize: 13, lineHeight: 1.8 }}>
               <li>Acesso total ao sistema</li>
               <li>Visualiza todas as unidades</li>
-              <li>Pode trocar unidade ativa no header</li>
               <li>Gerencia usuários e permissões</li>
+            </ul>
+          </div>
+          <div style={{ padding: '14px 16px', background: 'rgba(255,180,0,0.08)', borderRadius: 8, border: '1px solid rgba(255,180,0,0.25)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <RoleBadge role="supervisor" />
+              <span style={{ fontWeight: 700, fontSize: 14 }}>Supervisor</span>
+            </div>
+            <ul style={{ margin: 0, padding: '0 0 0 16px', color: 'var(--text-dim)', fontSize: 13, lineHeight: 1.8 }}>
+              <li>Visualização geral do sistema</li>
+              <li>Acesso a Dashboard, KPIs, Inventário</li>
+              <li>Sem registro de entradas e saídas</li>
+              <li>Sem acesso a usuários</li>
             </ul>
           </div>
           <div style={{ padding: '14px 16px', background: 'rgba(0,195,100,0.08)', borderRadius: 8, border: '1px solid rgba(0,195,100,0.2)' }}>
@@ -163,15 +174,18 @@ export default function UsersPage() {
                             onChange={e => handleUpdate(u.id, 'role', e.target.value)}
                           >
                             <option value="admin">Admin</option>
+                            <option value="supervisor">Supervisor</option>
                             <option value="analista">Analista</option>
                           </select>
                         )}
                       </td>
 
-                      {/* Unidade — só faz sentido para analistas */}
+                      {/* Unidade — não se aplica a admin nem supervisor */}
                       <td>
-                        {u.role === 'admin' ? (
-                          <span style={{ fontSize: 12, color: 'var(--text-dim)', fontStyle: 'italic' }}>Todas</span>
+                        {(u.role === 'admin' || u.role === 'supervisor') ? (
+                          <span style={{ fontSize: 12, color: 'var(--text-dim)', fontStyle: 'italic' }}>
+                            {u.role === 'admin' ? 'Todas' : '—'}
+                          </span>
                         ) : (
                           <select
                             className="form-select"
@@ -192,7 +206,7 @@ export default function UsersPage() {
                       <td>
                         {salvandoEu ? (
                           <span style={{ fontSize: 11, color: 'var(--accent)' }}>Salvando...</span>
-                        ) : u.role === 'admin' || u.unidade_id ? (
+                        ) : u.role === 'admin' || u.role === 'supervisor' || u.unidade_id ? (
                           <span className="badge badge-green" style={{ fontSize: 10 }}>✓ OK</span>
                         ) : (
                           <span className="badge badge-warn" style={{ fontSize: 10 }}>⚠ Sem unidade</span>

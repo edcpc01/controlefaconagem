@@ -94,7 +94,7 @@ function NFForm({ form, set, onSubmit, onCancel, loading, extracting, onPDFUploa
 // ── Página ────────────────────────────────────────────────────────
 export default function EntradaPage() {
   const { user }   = useAuth()
-  const { unidadeAtiva } = useUser() || {}
+  const { unidadeAtiva, isSupervisor } = useUser() || {}
   const navigate   = useNavigate()
   const pdfRef     = useRef()
   const [nfs, setNfs]                 = useState([])
@@ -281,7 +281,8 @@ export default function EntradaPage() {
         </div>
       )}
 
-      {/* Formulário de cadastro */}
+      {/* Formulário de cadastro — oculto para supervisor */}
+      {!isSupervisor && (
       <div className="card" style={{marginBottom:24}}>
         <div className="card-title">Nova NF de Entrada</div>
         <NFForm
@@ -294,6 +295,7 @@ export default function EntradaPage() {
           isEdit={false}
         />
       </div>
+      )}
 
       {/* Lista de NFs */}
       <div className="card">
@@ -341,8 +343,8 @@ export default function EntradaPage() {
                     <td style={{width:90, minWidth:90, overflow:'visible'}}>
                       <div style={{display:'flex', gap:2}}>
                         <button className="btn btn-ghost btn-sm" title="Ver detalhes" onClick={() => navigate(`/nf/${nf.id}`)}>🔍</button>
-                        <button className="btn btn-ghost btn-sm" title="Editar" onClick={() => abrirEditar(nf)}>✏</button>
-                        <button className="btn btn-danger btn-sm" title="Remover" onClick={() => setConfirmDelete(nf)}>✕</button>
+                        {!isSupervisor && <button className="btn btn-ghost btn-sm" title="Editar" onClick={() => abrirEditar(nf)}>✏</button>}
+                        {!isSupervisor && <button className="btn btn-danger btn-sm" title="Remover" onClick={() => setConfirmDelete(nf)}>✕</button>}
                       </div>
                     </td>
                   </tr>
