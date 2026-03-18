@@ -210,7 +210,7 @@ function SucessoModal({ ultimaSaida, onClose, onPDF }) {
 // ── Página Principal ──────────────────────────────────────────────────────
 export default function SaidaPage() {
   const { user } = useAuth()
-  const { unidadeAtiva } = useUser() || {}
+  const { unidadeAtiva, isSupervisor } = useUser() || {}
   const [saidas, setSaidas]           = useState([])
   const [nfs, setNfs]                 = useState([])
   const [form, setForm]               = useState(EMPTY_FORM)
@@ -605,7 +605,13 @@ export default function SaidaPage() {
         </div>
       )}
 
-      {/* ── Tabs ── */}
+      {/* ── Tabs — ocultas para supervisor ── */}
+      {isSupervisor ? (
+        <div style={{ marginBottom:20, padding:'10px 16px', background:'rgba(255,180,0,0.08)', border:'1px solid var(--warn)', borderRadius:10, fontSize:13, color:'var(--warn)', fontWeight:600 }}>
+          👁 Modo visualização — Supervisores não podem registrar saídas.
+        </div>
+      ) : (
+      <>
       <div style={{display:'flex', gap:0, marginBottom:20, borderBottom:'1px solid var(--border)'}}>
         {[{k:'simples', label:'➕ Saída Individual'}, {k:'lote', label:'📦 Saída em Lote'}].map(t => (
           <button key={t.k} onClick={() => setAba(t.k)} style={{
@@ -942,6 +948,7 @@ export default function SaidaPage() {
           )}
         </div>
       )} {/* fim aba lote */}
+      </> )} {/* fim bloco não-supervisor */}
 
       {/* ── Filtros + Histórico ── */}
       <div className="card" style={{marginBottom:16, paddingBottom:0}}>
@@ -1014,9 +1021,11 @@ export default function SaidaPage() {
                       <div style={{display:'flex', gap:2}}>
                         <button className="btn btn-ghost btn-sm" title="Gerar Romaneio PDF"
                           onClick={() => handleGerarPDF(s, s.alocacao_saida || [])}>📄</button>
+                        {!isSupervisor && (
                         <button className="btn btn-ghost btn-sm" title="Excluir saída"
                           onClick={() => setConfirmDeleteSaida(s)}
                           style={{color:'var(--danger)'}}>🗑</button>
+                        )}
                       </div>
                     </td>
                   </tr>
