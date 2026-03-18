@@ -133,9 +133,9 @@ function UnidadeSelector() {
   const ctx = useUser()
   if (!ctx || !ctx.perfil) return null
 
-  const { isAdmin, unidadeAtiva, trocarUnidade, perfil } = ctx
+  const { isAdmin, isSupervisor, unidadeAtiva, trocarUnidade, perfil } = ctx
 
-  if (!isAdmin) {
+  if (!isAdmin && !isSupervisor) {
     const un = UNIDADES_DEFAULT.find(u => u.id === perfil.unidade_id)
     if (!un) return null
     return (
