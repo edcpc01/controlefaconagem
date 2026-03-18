@@ -57,8 +57,8 @@ export function UserProvider({ children, firebaseUser }) {
       init = false
       setPerfil(p)
 
-      // Analista e supervisor sempre usam a unidade do seu perfil
-      if (p.role !== 'admin' && p.unidade_id) {
+      // Analista sempre usa a unidade do seu perfil
+      if (p.role !== 'admin' && p.role !== 'supervisor' && p.unidade_id) {
         setUnidadeAtiva(p.unidade_id)
         sessionStorage.setItem('unidade_ativa', p.unidade_id)
       }
@@ -75,7 +75,7 @@ export function UserProvider({ children, firebaseUser }) {
   const isSupervisor = perfil?.role === 'supervisor'
 
   const trocarUnidade = (id) => {
-    if (!isAdmin) return   // só admin pode trocar
+    if (!isAdmin && !isSupervisor) return   // só admin e supervisor podem trocar
     setUnidadeAtiva(id)
     sessionStorage.setItem('unidade_ativa', id)
   }
