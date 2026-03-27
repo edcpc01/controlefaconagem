@@ -712,12 +712,12 @@ export async function registrarEdicaoNF(nfId, dadosAntes, dadosDepois, usuario) 
 
 export async function listarHistoricoNF(nfId) {
   const snap = await getDocs(
-    query(collection(db, 'nf_historico'), where('nf_id', '==', nfId), orderBy('editado_em', 'desc'))
+    query(collection(db, 'nf_historico'), where('nf_id', '==', nfId))
   )
-  return snap.docs.map(d => ({
-    id: d.id, ...d.data(),
-    editado_em: tsToDateTime(d.data().editado_em),
-  }))
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data(), editado_em: tsToDateTime(d.data().editado_em) }))
+    .sort((a, b) => (b.editado_em || '').localeCompare(a.editado_em || ''))
+}
 }
 
 // ─────────────────────────────────────────────────────────────────
