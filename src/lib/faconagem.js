@@ -718,7 +718,6 @@ export async function listarHistoricoNF(nfId) {
     .map(d => ({ id: d.id, ...d.data(), editado_em: tsToDateTime(d.data().editado_em) }))
     .sort((a, b) => (b.editado_em || '').localeCompare(a.editado_em || ''))
 }
-}
 
 // ─────────────────────────────────────────────────────────────────
 // SAÍDA EM LOTE (múltiplos romaneios de uma vez)
