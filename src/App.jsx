@@ -14,7 +14,8 @@ import UsersPage      from './pages/UsersPage'
 import LoginPage      from './pages/LoginPage'
 import KpisPage       from './pages/KpisPage'
 import InventarioPage from './pages/InventarioPage'
-import MapaCalorPage  from './pages/MapaCalorPage'
+import MapaCalorPage   from './pages/MapaCalorPage'
+import RelatoriosPage  from './pages/RelatoriosPage'
 import './index.css'
 
 // ── PWA Update Banner ────────────────────────────────────────────
@@ -118,14 +119,15 @@ function PWAInstallBanner() {
 }
 
 const NAV_BASE = [
-  { to: '/',           label: 'Dashboard',  icon: '◈', end: true },
-  { to: '/entrada',    label: 'NF Entrada', icon: '↓' },
-  { to: '/saida',      label: 'Saída',      icon: '↑' },
-  { to: '/kpis',       label: 'KPIs',       icon: '📊' },
-  { to: '/inventario', label: 'Inventário', icon: '🔍' },
-  { to: '/mapa',       label: 'Mapa',       icon: '🌡️' },
-  { to: '/log',        label: 'Histórico',  icon: '📋' },
-  { to: '/config',     label: 'Config',     icon: '⚙' },
+  { to: '/',            label: 'Dashboard',  icon: '◈', end: true },
+  { to: '/entrada',     label: 'NF Entrada', icon: '↓' },
+  { to: '/saida',       label: 'Saída',      icon: '↑' },
+  { to: '/kpis',        label: 'KPIs',       icon: '📊' },
+  { to: '/inventario',  label: 'Inventário', icon: '🔍' },
+  { to: '/mapa',        label: 'Mapa',       icon: '🌡️' },
+  { to: '/relatorios',  label: 'Relatórios', icon: '📑' },
+  { to: '/log',         label: 'Histórico',  icon: '📋' },
+  { to: '/config',      label: 'Config',     icon: '⚙' },
 ]
 
 // ── Seletor de Unidade no header ─────────────────────────────────
@@ -210,11 +212,12 @@ function Layout({ children }) {
     { to: '/',           label: 'Dashboard',  icon: '◈', end: true },
     { to: '/entrada',    label: 'NF Entrada', icon: '↓' },
     { to: '/saida',      label: 'Saída',      icon: '↑' },
-    { to: '/kpis',       label: 'KPIs',       icon: '📊' },
-    { to: '/inventario', label: 'Inventário', icon: '🔍' },
-    { to: '/mapa',       label: 'Mapa',       icon: '🌡️' },
-    { to: '/log',        label: 'Histórico',  icon: '📋' },
-    { to: '/config',     label: 'Config',     icon: '⚙' },
+    { to: '/kpis',        label: 'KPIs',       icon: '📊' },
+    { to: '/inventario',  label: 'Inventário', icon: '🔍' },
+    { to: '/mapa',        label: 'Mapa',       icon: '🌡️' },
+    { to: '/relatorios',  label: 'Relatórios', icon: '📑' },
+    { to: '/log',         label: 'Histórico',  icon: '📋' },
+    { to: '/config',      label: 'Config',     icon: '⚙' },
   ]
 
   const navItems = isAdmin
@@ -331,6 +334,7 @@ function ProtectedApp() {
           <Route path="/kpis"       element={<KpisPage />} />
           <Route path="/inventario" element={<InventarioPage />} />
           <Route path="/mapa"       element={<MapaCalorPage />} />
+          <Route path="/relatorios" element={<RelatoriosPage />} />
           <Route path="/log"      element={<LogPage />} />
           <Route path="/config"   element={<ConfigPage />} />
           <Route path="/usuarios" element={isSupervisor ? <Navigate to="/" replace /> : <UsersPage />} />

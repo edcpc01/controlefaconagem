@@ -1048,3 +1048,270 @@ export function gerarInventarioPDF(linhas, unidadeId, dataStr) {
 
   pdoc.save(`inventario_${format(new Date(), 'yyyy-MM-dd')}.pdf`)
 }
+
+// ─────────────────────────────────────────────────────────────────
+// RELATÓRIOS — PDF e XLSX
+// ─────────────────────────────────────────────────────────────────
+
+const DARK_R  = [15, 32, 60]
+const MED_R   = [26, 80, 150]
+const WHITE_R = [255, 255, 255]
+const fmtN2 = n => Number(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
+const fmtDate2 = d => { try { return format(new Date(d),'dd/MM/yyyy') } catch { return '—' } }
+const fmtDT2  = d => { try { return format(new Date(d),"dd/MM/yyyy HH:mm") } catch { return '—' } }
+
+function pdfHeader(pdoc, titulo, subtitulo) {
+  const W = pdoc.internal.pageSize.width
+  pdoc.setFillColor(...DARK_R); pdoc.rect(0,0,W,28,'F')
+  pdoc.setTextColor(...WHITE_R)
+  pdoc.setFontSize(13); pdoc.setFont('helvetica','bold')
+  pdoc.text('RHODIA FAÇONAGEM', W/2, 10, {align:'center'})
+  pdoc.setFontSize(9); pdoc.setFont('helvetica','normal')
+  pdoc.text(titulo.toUpperCase(), W/2, 18, {align:'center'})
+  if (subtitulo) { pdoc.setFontSize(7); pdoc.text(subtitulo, W/2, 24, {align:'center'}) }
+}
+
+function pdfFooter(pdoc) {
+  const total = pdoc.internal.getNumberOfPages()
+  for (let p = 1; p <= total; p++) {
+    pdoc.setPage(p)
+    const W = pdoc.internal.pageSize.width
+    const H = pdoc.internal.pageSize.height
+    pdoc.setFillColor(...DARK_R); pdoc.rect(0,H-10,W,10,'F')
+    pdoc.setTextColor(...WHITE_R); pdoc.setFontSize(7); pdoc.setFont('helvetica','normal')
+    pdoc.text(`Rhodia — Controle de Façonagem  |  Pág. ${p}/${total}`, W/2, H-3, {align:'center'})
+  }
+}
+
+// ── 1. Movimentações NF de Entrada ──────────────────────────────
+export function relMovimentacoesNFPDF(nfs, alocacoes, filtro) {
+  const pdoc = new jsPDF({orientation:'landscape', unit:'mm', format:'a4'})
+  const W = pdoc.internal.pageSize.width
+  const sub = filtro ? `Período: ${filtro}` : `Emitido: ${fmtDT2(new Date())}`
+  pdfHeader(pdoc, 'Movimentações de NFs de Entrada', sub)
+
+  autoTable(pdoc, {
+    startY: 32, margin:{left:10,right:10},
+    head: [['NF','Emissão','Cód. Material','Lote POY','Vol. Entrada (kg)','Saldo (kg)','Consumido (kg)','Romaneio','Tipo Saída','Abatido (kg)','Data Saída']],
+    body: alocacoes.map(a => {
+      const nf = nfs.find(n => n.id === a.nf_entrada_id) || {}
+      const s  = a.saida || {}
+      return [
+        nf.numero_nf || '—', fmtDate2(nf.data_emissao), nf.codigo_material||'—', nf.lote||'—',
+        fmtN2(nf.volume_kg), fmtN2(nf.volume_saldo_kg),
+        fmtN2(Number(nf.volume_kg||0)-Number(nf.volume_saldo_kg||0)),
+        s.romaneio_microdata||'—',
+        TIPOS_SAIDA.find(t=>t.value===s.tipo_saida)?.label||s.tipo_saida||'—',
+        fmtN2(a.volume_alocado_kg), fmtDT2(s.criado_em||a.criado_em),
+      ]
+    }),
+    headStyles:{fillColor:MED_R,textColor:WHITE_R,fontSize:7,fontStyle:'bold'},
+    bodyStyles:{fontSize:7},
+    alternateRowStyles:{fillColor:[240,246,255]},
+    columnStyles:{4:{halign:'right'},5:{halign:'right'},6:{halign:'right'},9:{halign:'right'}},
+  })
+  pdfFooter(pdoc)
+  pdoc.save(`movimentacoes_nf_${format(new Date(),'yyyyMMdd')}.pdf`)
+}
+
+export function relMovimentacoesNFXLSX(nfs, alocacoes) {
+  const wb = XLSX.utils.book_new()
+  const rows = alocacoes.map(a => {
+    const nf = nfs.find(n => n.id === a.nf_entrada_id) || {}
+    const s  = a.saida || {}
+    return {
+      'NF': nf.numero_nf||'—', 'Emissão NF': fmtDate2(nf.data_emissao),
+      'Cód. Material': nf.codigo_material||'—', 'Lote POY': nf.lote||'—',
+      'Vol. Entrada (kg)': Number(nf.volume_kg||0),
+      'Saldo Atual (kg)': Number(nf.volume_saldo_kg||0),
+      'Consumido (kg)': Number(nf.volume_kg||0)-Number(nf.volume_saldo_kg||0),
+      'Romaneio': s.romaneio_microdata||'—',
+      'Tipo Saída': TIPOS_SAIDA.find(t=>t.value===s.tipo_saida)?.label||s.tipo_saida||'—',
+      'Lote POY Saída': s.lote_poy||s.lote_produto||'—',
+      'Abatido (kg)': Number(a.volume_alocado_kg||0),
+      'Data Saída': fmtDT2(s.criado_em||a.criado_em),
+    }
+  })
+  const ws = XLSX.utils.json_to_sheet(rows)
+  ws['!cols'] = [12,12,14,12,16,14,14,14,22,12,14,16].map(w=>({wch:w}))
+  XLSX.utils.book_append_sheet(wb, ws, 'Movimentações NF')
+  XLSX.writeFile(wb, `movimentacoes_nf_${format(new Date(),'yyyyMMdd')}.xlsx`)
+}
+
+// ── 2. Faturamento ───────────────────────────────────────────────
+export function relFaturamentoPDF(saidas, filtro) {
+  const pdoc = new jsPDF({orientation:'landscape', unit:'mm', format:'a4'})
+  const W = pdoc.internal.pageSize.width
+  const fat = saidas.filter(s => s.tipo_saida === 'faturamento')
+  const totalKg = fat.reduce((a,s) => a+Number(s.volume_abatido_kg||0),0)
+  pdfHeader(pdoc, 'Movimentações de Faturamento', filtro ? `Período: ${filtro}` : `Emitido: ${fmtDT2(new Date())}`)
+
+  autoTable(pdoc, {
+    startY: 32, margin:{left:10,right:10},
+    head: [['Romaneio','Cód. Material','Lote POY','Lote Acabado','Vol. Líq. (kg)','Vol. Final (kg)','NFs Abatidas','Data/Hora','Usuário']],
+    body: fat.map(s => [
+      s.romaneio_microdata, s.codigo_material||s.codigo_produto||'—',
+      s.lote_poy||s.lote_produto||'—', s.lote_acabado||'—',
+      fmtN2(s.volume_liquido_kg||s.volume_bruto_kg),
+      fmtN2(s.volume_abatido_kg),
+      (s.alocacao_saida||[]).map(a=>`NF ${a.numero_nf}: ${fmtN2(a.volume_alocado_kg)} kg`).join(' | '),
+      fmtDT2(s.criado_em), s.usuario_email||'—',
+    ]),
+    foot: [['TOTAL','','','','', fmtN2(totalKg),'','','']],
+    headStyles:{fillColor:MED_R,textColor:WHITE_R,fontSize:7,fontStyle:'bold'},
+    bodyStyles:{fontSize:7},
+    footStyles:{fillColor:DARK_R,textColor:WHITE_R,fontStyle:'bold'},
+    alternateRowStyles:{fillColor:[240,246,255]},
+    columnStyles:{4:{halign:'right'},5:{halign:'right'}},
+  })
+  pdfFooter(pdoc)
+  pdoc.save(`faturamento_${format(new Date(),'yyyyMMdd')}.pdf`)
+}
+
+export function relFaturamentoXLSX(saidas) {
+  const wb = XLSX.utils.book_new()
+  const fat = saidas.filter(s => s.tipo_saida === 'faturamento')
+  const rows = fat.map(s => ({
+    'Romaneio': s.romaneio_microdata,
+    'Cód. Material': s.codigo_material||s.codigo_produto||'—',
+    'Lote POY': s.lote_poy||s.lote_produto||'—',
+    'Lote Acabado': s.lote_acabado||'—',
+    'Vol. Líquido (kg)': Number(s.volume_liquido_kg||s.volume_bruto_kg||0),
+    'Vol. Final (kg)': Number(s.volume_abatido_kg||0),
+    'Quantidade': s.quantidade||'',
+    'NFs Abatidas': (s.alocacao_saida||[]).map(a=>`NF ${a.numero_nf}: ${fmtN2(a.volume_alocado_kg)} kg`).join(' | '),
+    'Data/Hora': fmtDT2(s.criado_em),
+    'Usuário': s.usuario_email||'—',
+  }))
+  const ws = XLSX.utils.json_to_sheet(rows)
+  ws['!cols'] = [16,14,12,12,16,14,10,50,16,22].map(w=>({wch:w}))
+  XLSX.utils.book_append_sheet(wb, ws, 'Faturamento')
+  XLSX.writeFile(wb, `faturamento_${format(new Date(),'yyyyMMdd')}.xlsx`)
+}
+
+// ── 3. Devoluções ────────────────────────────────────────────────
+const TIPOS_DEV = ['dev_qualidade','dev_processo','dev_final_campanha']
+
+export function relDevolucoesPDF(saidas, filtro) {
+  const pdoc = new jsPDF({orientation:'landscape', unit:'mm', format:'a4'})
+  const W = pdoc.internal.pageSize.width
+  const devs = saidas.filter(s => TIPOS_DEV.includes(s.tipo_saida))
+  const totalKg = devs.reduce((a,s) => a+Number(s.volume_abatido_kg||0),0)
+  pdfHeader(pdoc, 'Movimentações de Devoluções', filtro ? `Período: ${filtro}` : `Emitido: ${fmtDT2(new Date())}`)
+
+  autoTable(pdoc, {
+    startY: 32, margin:{left:10,right:10},
+    head: [['Romaneio','Tipo Devolução','Cód. Material','Lote POY','Lote Acabado','Vol. Líq. (kg)','Vol. Final (kg)','NFs Abatidas','Data/Hora']],
+    body: devs.map(s => [
+      s.romaneio_microdata,
+      TIPOS_SAIDA.find(t=>t.value===s.tipo_saida)?.label||s.tipo_saida,
+      s.codigo_material||s.codigo_produto||'—',
+      s.lote_poy||s.lote_produto||'—', s.lote_acabado||'—',
+      fmtN2(s.volume_liquido_kg||s.volume_bruto_kg),
+      fmtN2(s.volume_abatido_kg),
+      (s.alocacao_saida||[]).map(a=>`NF ${a.numero_nf}: ${fmtN2(a.volume_alocado_kg)} kg`).join(' | '),
+      fmtDT2(s.criado_em),
+    ]),
+    foot: [['TOTAL','','','','','', fmtN2(totalKg),'','']],
+    headStyles:{fillColor:MED_R,textColor:WHITE_R,fontSize:7,fontStyle:'bold'},
+    bodyStyles:{fontSize:7},
+    footStyles:{fillColor:DARK_R,textColor:WHITE_R,fontStyle:'bold'},
+    alternateRowStyles:{fillColor:[240,246,255]},
+    columnStyles:{5:{halign:'right'},6:{halign:'right'}},
+  })
+  pdfFooter(pdoc)
+  pdoc.save(`devolucoes_${format(new Date(),'yyyyMMdd')}.pdf`)
+}
+
+export function relDevolucoesXLSX(saidas) {
+  const wb = XLSX.utils.book_new()
+  const devs = saidas.filter(s => TIPOS_DEV.includes(s.tipo_saida))
+  const rows = devs.map(s => ({
+    'Romaneio': s.romaneio_microdata,
+    'Tipo Devolução': TIPOS_SAIDA.find(t=>t.value===s.tipo_saida)?.label||s.tipo_saida,
+    'Cód. Material': s.codigo_material||s.codigo_produto||'—',
+    'Lote POY': s.lote_poy||s.lote_produto||'—',
+    'Lote Acabado': s.lote_acabado||'—',
+    'Vol. Líquido (kg)': Number(s.volume_liquido_kg||s.volume_bruto_kg||0),
+    'Vol. Final (kg)': Number(s.volume_abatido_kg||0),
+    'NFs Abatidas': (s.alocacao_saida||[]).map(a=>`NF ${a.numero_nf}: ${fmtN2(a.volume_alocado_kg)} kg`).join(' | '),
+    'Data/Hora': fmtDT2(s.criado_em),
+    'Usuário': s.usuario_email||'—',
+  }))
+  const ws = XLSX.utils.json_to_sheet(rows)
+  ws['!cols'] = [16,24,14,12,12,16,14,50,16,22].map(w=>({wch:w}))
+  XLSX.utils.book_append_sheet(wb, ws, 'Devoluções')
+  XLSX.writeFile(wb, `devolucoes_${format(new Date(),'yyyyMMdd')}.xlsx`)
+}
+
+// ── 4. Inventário ────────────────────────────────────────────────
+export function relInventarioPDF(inventarios, filtro) {
+  const pdoc = new jsPDF({orientation:'landscape', unit:'mm', format:'a4'})
+  const W = pdoc.internal.pageSize.width
+  pdfHeader(pdoc, 'Relatório de Inventários', filtro ? `Período: ${filtro}` : `Emitido: ${fmtDT2(new Date())}`)
+
+  let y = 32
+  inventarios.forEach((inv, idx) => {
+    if (idx > 0 && y > 160) { pdoc.addPage(); y = 15 }
+    const linhas = inv.linhas || []
+    const totalTeo = linhas.reduce((a,l)=>a+Number(l.saldo_teorico||0),0)
+    const totalFis = linhas.reduce((a,l)=>a+Number(l.contagem_kg||0),0)
+
+    // Cabeçalho do inventário
+    pdoc.setFillColor(...MED_R); pdoc.setTextColor(...WHITE_R)
+    pdoc.setFontSize(8); pdoc.setFont('helvetica','bold')
+    pdoc.roundedRect(10, y, W-20, 7, 1, 1, 'F')
+    pdoc.text(`Inventário: ${fmtDT2(inv.criado_em)}  |  ${linhas.length} lotes  |  Por: ${inv.criado_por||'—'}`, W/2, y+5, {align:'center'})
+    y += 9
+
+    autoTable(pdoc, {
+      startY: y, margin:{left:10,right:10},
+      head: [['Lote POY','Saldo Teórico (kg)','Contagem Física (kg)','Divergência (kg)','Divergência (%)','Status']],
+      body: linhas.map(l => [
+        l.lote,
+        fmtN2(l.saldo_teorico), fmtN2(l.contagem_kg),
+        (Number(l.divergencia_kg||0)>=0?'+':'')+fmtN2(l.divergencia_kg),
+        (Number(l.divergencia_pct||0)>=0?'+':'')+Number(l.divergencia_pct||0).toFixed(2)+'%',
+        Math.abs(Number(l.divergencia_pct||0))<0.5?'OK':Math.abs(Number(l.divergencia_pct||0))<2?'ATENÇÃO':'CRÍTICO',
+      ]),
+      foot: [['TOTAL', fmtN2(totalTeo), fmtN2(totalFis), fmtN2(totalFis-totalTeo), '', '']],
+      headStyles:{fillColor:DARK_R,textColor:WHITE_R,fontSize:7,fontStyle:'bold'},
+      bodyStyles:{fontSize:7},
+      footStyles:{fillColor:DARK_R,textColor:WHITE_R,fontStyle:'bold'},
+      alternateRowStyles:{fillColor:[240,246,255]},
+      columnStyles:{1:{halign:'right'},2:{halign:'right'},3:{halign:'right'},4:{halign:'right'},5:{halign:'center'}},
+      didParseCell(data) {
+        if (data.section==='body'&&data.column.index===5) {
+          const v = data.cell.raw
+          if (v==='CRÍTICO') data.cell.styles.textColor=[200,30,30]
+          else if (v==='ATENÇÃO') data.cell.styles.textColor=[180,120,0]
+          else data.cell.styles.textColor=[0,140,70]
+        }
+      }
+    })
+    y = pdoc.lastAutoTable.finalY + 10
+  })
+
+  pdfFooter(pdoc)
+  pdoc.save(`inventarios_${format(new Date(),'yyyyMMdd')}.pdf`)
+}
+
+export function relInventarioXLSX(inventarios) {
+  const wb = XLSX.utils.book_new()
+  inventarios.forEach((inv, idx) => {
+    const linhas = inv.linhas || []
+    const rows = linhas.map(l => ({
+      'Lote POY': l.lote,
+      'Saldo Teórico (kg)': Number(l.saldo_teorico||0),
+      'Contagem Física (kg)': Number(l.contagem_kg||0),
+      'Divergência (kg)': Number(l.divergencia_kg||0),
+      'Divergência (%)': Number(l.divergencia_pct||0),
+      'Status': Math.abs(Number(l.divergencia_pct||0))<0.5?'OK':Math.abs(Number(l.divergencia_pct||0))<2?'ATENÇÃO':'CRÍTICO',
+    }))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    ws['!cols'] = [14,18,18,16,14,10].map(w=>({wch:w}))
+    const nomePlanilha = `Inv ${fmtDate2(inv.criado_em)} (${idx+1})`
+    XLSX.utils.book_append_sheet(wb, ws, nomePlanilha.substring(0,31))
+  })
+  XLSX.writeFile(wb, `inventarios_${format(new Date(),'yyyyMMdd')}.xlsx`)
+}
