@@ -230,6 +230,14 @@ function PainelMultiItem({ itens, onSalvar, onCancelar, loading, initialNF, init
   )
 }
 
+// ── Página Principal ─────────────────────────────────────────────
+export default function EntradaPage() {
+  const { user }   = useAuth()
+  const { unidadeAtiva, isSupervisor } = useUser() || {}
+  const navigate   = useNavigate()
+  const pdfRef     = useRef()
+  const [nfs, setNfs]                 = useState([])
+  const [form, setForm]               = useState(EMPTY_FORM)
   const [loading, setLoading]         = useState(false)
   const [extracting, setExtracting]   = useState(false)
   const [loadingList, setLoadingList] = useState(true)
@@ -577,3 +585,4 @@ function PainelMultiItem({ itens, onSalvar, onCancelar, loading, initialNF, init
       <Toast toasts={toasts} />
     </div>
   )
+}
