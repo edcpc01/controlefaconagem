@@ -93,31 +93,60 @@ function NFForm({ form, set, onSubmit, onCancel, loading, extracting, onPDFUploa
   )
 }
 
-// ── Painel de revisão multi-item (quando PDF tem vários produtos) ──
-function PainelMultiItem({ numeroNF, dataEmissao, itens, unidadeAtiva, onSalvar, onCancelar, loading }) {
-  const [linhas, setLinhas] = useState(itens.map((item, i) => ({ ...item, _id: i, incluir: true })))
 
-  const setLinha = (id, campo, valor) => setLinhas(ls => ls.map(l => l._id === id ? {...l, [campo]: valor} : l))
+// ── Painel de revisão multi-item (PDF ou manual) ──────────────────
+function PainelMultiItem({ itens, onSalvar, onCancelar, loading, initialNF, initialData }) {
+  const [linhas,  setLinhas]  = useState(itens.map((item, i) => ({ ...item, _id: i, incluir: true })))
+  const [cabNF,   setCabNF]   = useState(initialNF   || '')
+  const [cabData, setCabData] = useState(initialData || '')
+  const nextId = useRef(itens.length)
+
+  const setLinha = (id, campo, valor) =>
+    setLinhas(ls => ls.map(l => l._id === id ? {...l, [campo]: valor} : l))
+  const addLinha = () =>
+    setLinhas(ls => [...ls, { _id: nextId.current++, incluir:true, codigo_material:'', lote:'', volume_kg:'', valor_unitario:'' }])
+  const removeLinha = (id) => setLinhas(ls => ls.filter(l => l._id !== id))
 
   const totalVol = linhas.filter(l=>l.incluir).reduce((a,l) => a + (parseFloat(l.volume_kg)||0), 0)
   const totalVal = linhas.filter(l=>l.incluir).reduce((a,l) => a + (parseFloat(l.volume_kg)||0)*(parseFloat(l.valor_unitario)||0), 0)
 
+  const handleSalvar = () => {
+    if (!cabNF.trim())  { alert('Informe o número da NF.'); return }
+    if (!cabData)       { alert('Informe a data de emissão.'); return }
+    const ativas = linhas.filter(l => l.incluir)
+    if (ativas.some(l => !l.codigo_material.trim())) { alert('Preencha o código do material em todas as linhas.'); return }
+    onSalvar(ativas, cabNF.trim(), cabData)
+  }
+
   return (
     <div className="card" style={{marginBottom:24, borderColor:'var(--accent)'}}>
       <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16, flexWrap:'wrap', gap:10}}>
-        <div>
-          <div className="card-title" style={{margin:0}}>
-            📋 NF {numeroNF} — {linhas.filter(l=>l.incluir).length} item{linhas.filter(l=>l.incluir).length!==1?'s':''} para cadastrar
-          </div>
-          <div style={{fontSize:12, color:'var(--text-dim)', marginTop:3}}>
-            Emissão: {dataEmissao ? new Date(dataEmissao+'T12:00').toLocaleDateString('pt-BR') : '—'} · Revise e ajuste antes de salvar
-          </div>
-        </div>
+        <div className="card-title" style={{margin:0}}>📋 NF com múltiplos materiais</div>
         <div style={{display:'flex', gap:8}}>
           <button className="btn btn-ghost btn-sm" onClick={onCancelar}>✕ Cancelar</button>
-          <button className="btn btn-primary btn-sm" onClick={() => onSalvar(linhas.filter(l=>l.incluir))} disabled={loading||linhas.filter(l=>l.incluir).length===0}>
+          <button className="btn btn-primary btn-sm" onClick={handleSalvar}
+            disabled={loading || linhas.filter(l=>l.incluir).length === 0}>
             {loading ? '⏳ Salvando...' : `💾 Salvar ${linhas.filter(l=>l.incluir).length} item${linhas.filter(l=>l.incluir).length!==1?'s':''}`}
           </button>
+        </div>
+      </div>
+
+      {/* Cabeçalho NF */}
+      <div style={{display:'flex', gap:12, marginBottom:16, flexWrap:'wrap'}}>
+        <div className="form-group" style={{margin:0, flex:'1 1 160px'}}>
+          <label className="form-label">Número da NF *</label>
+          <input className="form-input" placeholder="Ex: 100394"
+            value={cabNF} onChange={e => setCabNF(e.target.value)} />
+        </div>
+        <div className="form-group" style={{margin:0, flex:'1 1 160px'}}>
+          <label className="form-label">Data de Emissão *</label>
+          <input type="date" className="form-input"
+            value={cabData} onChange={e => setCabData(e.target.value)} />
+        </div>
+        <div style={{flex:'2 1 200px', display:'flex', alignItems:'flex-end', paddingBottom:2}}>
+          <div style={{fontSize:12, color:'var(--text-dim)'}}>
+            Todos os itens usarão o mesmo número de NF e data. Revise antes de salvar.
+          </div>
         </div>
       </div>
 
@@ -129,11 +158,12 @@ function PainelMultiItem({ numeroNF, dataEmissao, itens, unidadeAtiva, onSalvar,
                 <input type="checkbox" checked={linhas.every(l=>l.incluir)}
                   onChange={e => setLinhas(ls => ls.map(l => ({...l, incluir: e.target.checked})))} />
               </th>
-              <th style={{padding:'8px 10px', textAlign:'left', color:'var(--text-dim)', fontWeight:600}}>Cód. Material</th>
+              <th style={{padding:'8px 10px', textAlign:'left', color:'var(--text-dim)', fontWeight:600}}>Cód. Material *</th>
               <th style={{padding:'8px 10px', textAlign:'left', color:'var(--text-dim)', fontWeight:600}}>Lote POY</th>
-              <th style={{padding:'8px 10px', textAlign:'right', color:'var(--text-dim)', fontWeight:600}}>Volume (kg)</th>
-              <th style={{padding:'8px 10px', textAlign:'right', color:'var(--text-dim)', fontWeight:600}}>Valor Unit. (R$)</th>
+              <th style={{padding:'8px 10px', textAlign:'right', color:'var(--text-dim)', fontWeight:600}}>Volume (kg) *</th>
+              <th style={{padding:'8px 10px', textAlign:'right', color:'var(--text-dim)', fontWeight:600}}>Valor Unit. (R$) *</th>
               <th style={{padding:'8px 10px', textAlign:'right', color:'var(--text-dim)', fontWeight:600}}>Total (R$)</th>
+              <th style={{padding:'8px 10px', width:36}}></th>
             </tr>
           </thead>
           <tbody>
@@ -144,32 +174,45 @@ function PainelMultiItem({ numeroNF, dataEmissao, itens, unidadeAtiva, onSalvar,
                 </td>
                 <td style={{padding:'6px 10px'}}>
                   <input className="form-input" style={{width:120, fontFamily:'monospace'}}
+                    placeholder="Ex: 140911"
                     value={l.codigo_material} onChange={e => setLinha(l._id,'codigo_material',e.target.value)} />
                 </td>
                 <td style={{padding:'6px 10px'}}>
                   <input className="form-input" style={{width:90, fontFamily:'monospace'}}
-                    placeholder="Ex: 5327" value={l.lote} onChange={e => setLinha(l._id,'lote',e.target.value)} />
+                    placeholder="Ex: 5327" value={l.lote}
+                    onChange={e => setLinha(l._id,'lote',e.target.value)} />
                 </td>
                 <td style={{padding:'6px 10px'}}>
                   <input className="form-input" type="number" step="0.001"
                     style={{width:110, textAlign:'right', fontFamily:'monospace'}}
+                    placeholder="0,000"
                     value={l.volume_kg} onChange={e => setLinha(l._id,'volume_kg',e.target.value)} />
                 </td>
                 <td style={{padding:'6px 10px'}}>
                   <input className="form-input" type="number" step="0.000001"
                     style={{width:120, textAlign:'right', fontFamily:'monospace'}}
+                    placeholder="0,000000"
                     value={l.valor_unitario} onChange={e => setLinha(l._id,'valor_unitario',e.target.value)} />
                 </td>
                 <td style={{padding:'8px 10px', textAlign:'right', fontFamily:'monospace', color:'var(--accent)', fontWeight:600}}>
                   {((parseFloat(l.volume_kg)||0)*(parseFloat(l.valor_unitario)||0)).toLocaleString('pt-BR',{minimumFractionDigits:2})}
+                </td>
+                <td style={{padding:'6px 10px', textAlign:'center'}}>
+                  {linhas.length > 1 && (
+                    <button onClick={() => removeLinha(l._id)}
+                      style={{background:'none', border:'none', cursor:'pointer', color:'var(--danger)', fontSize:16, padding:0}}
+                      title="Remover linha">✕</button>
+                  )}
                 </td>
               </tr>
             ))}
           </tbody>
           <tfoot>
             <tr style={{borderTop:'2px solid var(--border)', background:'rgba(255,255,255,0.03)'}}>
-              <td colSpan={3} style={{padding:'8px 10px', fontWeight:700, fontSize:12}}>
-                TOTAL ({linhas.filter(l=>l.incluir).length} itens selecionados)
+              <td colSpan={3} style={{padding:'8px 10px'}}>
+                <button className="btn btn-ghost btn-sm" onClick={addLinha} style={{fontSize:12}}>
+                  + Adicionar material
+                </button>
               </td>
               <td style={{padding:'8px 10px', textAlign:'right', fontFamily:'monospace', fontWeight:700, color:'var(--accent-2)'}}>
                 {totalVol.toLocaleString('pt-BR',{minimumFractionDigits:3})} kg
@@ -178,6 +221,7 @@ function PainelMultiItem({ numeroNF, dataEmissao, itens, unidadeAtiva, onSalvar,
               <td style={{padding:'8px 10px', textAlign:'right', fontFamily:'monospace', fontWeight:700, color:'var(--accent)'}}>
                 R$ {totalVal.toLocaleString('pt-BR',{minimumFractionDigits:2})}
               </td>
+              <td />
             </tr>
           </tfoot>
         </table>
@@ -186,14 +230,6 @@ function PainelMultiItem({ numeroNF, dataEmissao, itens, unidadeAtiva, onSalvar,
   )
 }
 
-// ── Página Principal ──────────────────────────────────────────────
-export default function EntradaPage() {
-  const { user }   = useAuth()
-  const { unidadeAtiva, isSupervisor } = useUser() || {}
-  const navigate   = useNavigate()
-  const pdfRef     = useRef()
-  const [nfs, setNfs]                 = useState([])
-  const [form, setForm]               = useState(EMPTY_FORM)
   const [loading, setLoading]         = useState(false)
   const [extracting, setExtracting]   = useState(false)
   const [loadingList, setLoadingList] = useState(true)
@@ -291,12 +327,12 @@ export default function EntradaPage() {
   }
 
   // ── Salvar multi-item ────────────────────────────────────────────
-  const handleSalvarMulti = async (linhas) => {
+  const handleSalvarMulti = async (linhas, nfNum, nfData) => {
     setLoading(true)
     try {
       const itensPayload = linhas.map(l => ({
-        data_emissao:    multiItens.data_emissao,
-        numero_nf:       multiItens.numero_nf,
+        data_emissao:    nfData,
+        numero_nf:       nfNum,
         codigo_material: l.codigo_material.trim(),
         lote:            l.lote.trim(),
         volume_kg:       parseFloat(l.volume_kg),
@@ -304,7 +340,7 @@ export default function EntradaPage() {
         unidade_id:      unidadeAtiva || '',
       }))
       await criarNFsEntradaLote(itensPayload, user)
-      toast(`✅ ${linhas.length} item${linhas.length!==1?'s':''} da NF ${multiItens.numero_nf} cadastrado${linhas.length!==1?'s':''}!`)
+      toast(`✅ ${linhas.length} item${linhas.length!==1?'s':''} da NF ${nfNum} cadastrado${linhas.length!==1?'s':''}!`)
       setMultiItens(null)
       load()
     } catch (e) {
@@ -407,8 +443,8 @@ export default function EntradaPage() {
       {/* Painel multi-item (quando PDF tem vários produtos) */}
       {!isSupervisor && multiItens && (
         <PainelMultiItem
-          numeroNF={multiItens.numero_nf}
-          dataEmissao={multiItens.data_emissao}
+          initialNF={multiItens.numero_nf}
+          initialData={multiItens.data_emissao}
           itens={multiItens.itens}
           unidadeAtiva={unidadeAtiva}
           onSalvar={handleSalvarMulti}
@@ -420,7 +456,20 @@ export default function EntradaPage() {
       {/* Formulário de cadastro — oculto para supervisor e quando multi-item está aberto */}
       {!isSupervisor && !multiItens && (
         <div className="card" style={{marginBottom:24}}>
-          <div className="card-title">Nova NF de Entrada</div>
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16, flexWrap:'wrap', gap:10}}>
+            <div className="card-title" style={{margin:0}}>Nova NF de Entrada</div>
+            <button
+              className="btn btn-ghost btn-sm"
+              title="Cadastrar NF com múltiplos materiais manualmente"
+              onClick={() => setMultiItens({
+                numero_nf: form.numero_nf || '',
+                data_emissao: form.data_emissao || '',
+                itens: [{ codigo_material:'', lote:'', volume_kg:'', valor_unitario:'' }]
+              })}
+            >
+              📋 Múltiplos materiais
+            </button>
+          </div>
           <NFForm
             form={form} set={set}
             onSubmit={handleSubmit}
