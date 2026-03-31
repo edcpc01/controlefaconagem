@@ -577,4 +577,3 @@ function PainelMultiItem({ itens, onSalvar, onCancelar, loading, initialNF, init
       <Toast toasts={toasts} />
     </div>
   )
-}
