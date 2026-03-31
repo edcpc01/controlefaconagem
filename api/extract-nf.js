@@ -22,7 +22,6 @@ export default async function handler(req, res) {
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'OPENROUTER_API_KEY não configurada na Vercel.' })
 
-  // Aceita: { base64Data } ou { pdfText }
   const { base64Data, pdfText: pdfTextDireto } = req.body
 
   if (!base64Data && !pdfTextDireto) {
@@ -31,27 +30,12 @@ export default async function handler(req, res) {
 
   let textoNF = pdfTextDireto || ''
 
-  // Se veio base64, extrai o texto no servidor
-  if (base64Data && !textoNF) {
+  if (!textoNF && base64Data) {
     try {
-      const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs').catch(() => null)
-      if (pdfjsLib) {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = ''
-        const buf = Buffer.from(base64Data, 'base64')
-        const pdf = await pdfjsLib.getDocument({
-          data: new Uint8Array(buf),
-          useWorkerFetch: false,
-          isEvalSupported: false,
-          useSystemFonts: true,
-        }).promise
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i)
-          const content = await page.getTextContent()
-          textoNF += content.items.map(it => it.str).join(' ') + '\n'
-        }
-      } else {
-        textoNF = extrairTextoPDFBuffer(Buffer.from(base64Data, 'base64'))
-      }
+      const { default: pdfParse } = await import('pdf-parse/lib/pdf-parse.js')
+      const buf = Buffer.from(base64Data, 'base64')
+      const data = await pdfParse(buf)
+      textoNF = data.text || ''
     } catch (e) {
       textoNF = extrairTextoPDFBuffer(Buffer.from(base64Data, 'base64'))
     }
@@ -73,7 +57,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: 'arcee-ai/trinity-large-preview:free',
-        max_tokens: 512,
+        max_tokens: 1024,
         temperature: 0,
         messages: [
           {
@@ -82,24 +66,32 @@ export default async function handler(req, res) {
           },
           {
             role: 'user',
-            content: `Extraia os dados desta Nota Fiscal e retorne SOMENTE este JSON:
+            content: `Extraia os dados desta Nota Fiscal. A NF pode conter UM ou MAIS itens/produtos.
+
+Retorne SOMENTE este JSON:
 {
   "numero_nf": "número da NF sem zeros à esquerda",
   "data_emissao": "data de emissão no formato YYYY-MM-DD",
-  "codigo_material": "código do produto/item (campo COD. ou Código do Produto na tabela de itens — NÃO é o NCM/SH que tem 8 dígitos). Ex: 140911",
-  "lote": "código do lote POY (campo Lote ou Lote/Qtd). Ex: 5327",
-  "volume_kg": quantidade em kg como número decimal,
-  "valor_unitario": valor unitário como número decimal
+  "itens": [
+    {
+      "codigo_material": "código do produto (campo COD. da tabela — NÃO é o NCM que tem 8 dígitos). Ex: 140911",
+      "lote": "apenas os primeiros 4 dígitos numéricos do lote POY se houver, ou vazio",
+      "volume_kg": quantidade em kg como número decimal,
+      "valor_unitario": valor unitário como número decimal
+    }
+  ]
 }
 
-ATENÇÃO:
-- "codigo_material" = campo COD. da tabela de produtos (ex: 140911, 99640). NÃO confundir com NCM/SH (sempre 8 dígitos como 54024520).
-- "lote" = apenas os primeiros 4 dígitos numéricos do campo Lote (ex: "53274S" → "5327").
-- "volume_kg" = campo QUANTID. ou Quantidade em KG.
-- "valor_unitario" = campo VALOR UNITÁRIO.
+REGRAS IMPORTANTES:
+- "numero_nf": número sem zeros à esquerda (ex: "100394" não "000100394")
+- "codigo_material": campo COD. da tabela de produtos (ex: 98673, 140019, 142450). NUNCA confundir com NCM/SH (8 dígitos como 34024200).
+- "lote": só os 4 primeiros dígitos numéricos se existir campo Lote/Qtd na NF. Se não houver lote, retorne string vazia "".
+- "volume_kg": campo QUANTID. em KG.
+- "valor_unitario": campo VALOR UNITÁRIO.
+- Se a NF tem múltiplos produtos, retorne todos no array "itens".
 
 TEXTO DA NOTA FISCAL:
-${textoNF.slice(0, 4000)}`
+${textoNF.slice(0, 5000)}`
           }
         ]
       })
@@ -122,6 +114,22 @@ ${textoNF.slice(0, 4000)}`
       if (!match) return res.status(422).json({ error: 'JSON inválido.', raw: clean.slice(0, 200) })
       parsed = JSON.parse(match[0])
     }
+
+    // Normaliza: se a IA retornou formato antigo (sem itens), converte
+    if (!parsed.itens) {
+      parsed.itens = [{
+        codigo_material: parsed.codigo_material || '',
+        lote: parsed.lote ? String(parsed.lote).replace(/\D/g,'').substring(0,4) : '',
+        volume_kg: parsed.volume_kg || 0,
+        valor_unitario: parsed.valor_unitario || 0,
+      }]
+    }
+
+    // Normaliza lotes de todos os itens
+    parsed.itens = parsed.itens.map(item => ({
+      ...item,
+      lote: item.lote ? String(item.lote).replace(/\D/g,'').substring(0,4) : '',
+    }))
 
     return res.status(200).json(parsed)
   } catch (e) {

@@ -250,7 +250,7 @@ async function extrairTextoPDF(base64Data) {
   return texto
 }
 
-// Envia texto ao proxy Vercel → OpenRouter (arcee-ai/trinity-large-preview:free)
+// Envia texto ao proxy Vercel → OpenRouter — agora retorna { numero_nf, data_emissao, itens: [...] }
 export async function extrairDadosNFdoPDF(base64Data) {
   const pdfText = await extrairTextoPDF(base64Data)
 
@@ -265,12 +265,32 @@ export async function extrairDadosNFdoPDF(base64Data) {
   }
   const dados = await response.json()
 
-  // Normaliza lote: usa apenas os 4 primeiros dígitos (ex: "53274S" → "5327")
-  if (dados.lote) {
-    dados.lote = String(dados.lote).replace(/\D/g, '').substring(0, 4)
+  // Garante formato novo com itens
+  if (!dados.itens) {
+    dados.itens = [{
+      codigo_material: dados.codigo_material || '',
+      lote: dados.lote ? String(dados.lote).replace(/\D/g,'').substring(0,4) : '',
+      volume_kg: dados.volume_kg || 0,
+      valor_unitario: dados.valor_unitario || 0,
+    }]
   }
+  dados.itens = dados.itens.map(item => ({
+    ...item,
+    lote: item.lote ? String(item.lote).replace(/\D/g,'').substring(0,4) : '',
+  }))
 
   return dados
+}
+
+// Cria múltiplas NFs de uma vez (NF com vários itens)
+export async function criarNFsEntradaLote(itens, usuario) {
+  // itens: [{ numero_nf, data_emissao, codigo_material, lote, volume_kg, valor_unitario, unidade_id }]
+  const resultados = []
+  for (const item of itens) {
+    const res = await criarNFEntrada(item, usuario)
+    resultados.push(res)
+  }
+  return resultados
 }
 
 // ─────────────────────────────────────────────────────────────────
