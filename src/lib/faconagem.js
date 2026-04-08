@@ -312,7 +312,7 @@ export async function criarNFsEntradaLote(itens, usuario) {
 // PREVIEW FIFO (sem gravar — usado para confirmação)
 // ─────────────────────────────────────────────────────────────────
 
-export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unidadeId = '', volumeLiquido = null } = {}) {
+export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unidadeId = '', volumeLiquido = null, volumeAbatimentoOverride = null } = {}) {
   const snap = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
   const allNFs = snap.docs.map(docToObj)
 
@@ -345,11 +345,14 @@ export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unid
   // Regra especial 135612: o abatimento (3,5% do volume líquido) é debitado de NFs de materiais companion
   if (codigoMaterial === MATERIAL_ESPECIAL_135612.codigo) {
     const volLiq = volumeLiquido != null ? volumeLiquido : volumeAbatido / (1 - MATERIAL_ESPECIAL_135612.percentual_abatimento)
-    const volumeAbatimento = volLiq * MATERIAL_ESPECIAL_135612.percentual_abatimento
+    // Permite override manual do valor total do abatimento
+    const volumeAbatimento = volumeAbatimentoOverride != null
+      ? volumeAbatimentoOverride
+      : volLiq * MATERIAL_ESPECIAL_135612.percentual_abatimento
     resultado.previewsCompanion = MATERIAL_ESPECIAL_135612.distribuicao.map(dist => {
       const volDist = volumeAbatimento * dist.percentual
       const { preview, saldoInsuficiente, faltando } = buildPreview(filtrarNFs(dist.codigo_material, null), volDist)
-      return { ...dist, volume: volDist, preview, saldoInsuficiente, faltando }
+      return { ...dist, volume: volDist, volumeAbatimentoTotal: volumeAbatimento, preview, saldoInsuficiente, faltando }
     })
   }
 
@@ -364,14 +367,20 @@ export async function criarSaida(payload, usuario) {
   const {
     romaneio_microdata, codigo_material, lote_poy, lote_acabado,
     tipo_saida, volume_liquido_kg, volume_bruto_kg, quantidade,
-    unidade_id = ''
+    unidade_id = '',
+    volume_abatimento_override = null,  // override manual do valor do abatimento (apenas 135612)
   } = payload
 
   const temAbatimento         = TIPOS_COM_ABATIMENTO.includes(tipo_saida)
   const isEspecial135612      = codigo_material === MATERIAL_ESPECIAL_135612.codigo
   const volume_abatido_kg     = calcularVolumeAbatido(volume_liquido_kg, tipo_saida, codigo_material)
   const percentual_abatimento = temAbatimento ? getPercentualAbatimento(codigo_material) : 0
-  const volume_abatimento_kg  = temAbatimento && isEspecial135612 ? volume_liquido_kg * MATERIAL_ESPECIAL_135612.percentual_abatimento : 0
+  // volume_abatimento_kg: o valor que será distribuído entre os materiais companion
+  const volume_abatimento_kg  = temAbatimento && isEspecial135612
+    ? (volume_abatimento_override != null
+        ? Number(volume_abatimento_override)
+        : volume_liquido_kg * MATERIAL_ESPECIAL_135612.percentual_abatimento)
+    : 0
 
   const snap = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
   const nfsComSaldo = snap.docs.map(docToObj).filter(nf => {
@@ -454,6 +463,7 @@ export async function criarSaida(payload, usuario) {
     quantidade:       quantidade || null,
     volume_abatido_kg,
     percentual_abatimento,
+    volume_abatimento_kg: volume_abatimento_kg || null,   // só 135612
     unidade_id,
     usuario_email: usuario?.email || '',
     criado_em: now,
@@ -508,7 +518,9 @@ export async function criarSaida(payload, usuario) {
     saida: {
       id: saidaRef.id, romaneio_microdata, codigo_material, lote_poy, lote_acabado,
       tipo_saida, volume_liquido_kg, volume_bruto_kg, quantidade,
-      volume_abatido_kg, percentual_abatimento, unidade_id,
+      volume_abatido_kg, percentual_abatimento,
+      volume_abatimento_kg: volume_abatimento_kg || null,
+      unidade_id,
       criado_em: now.toDate().toISOString()
     },
     alocacoes: alocacoesRetorno,
@@ -653,7 +665,7 @@ export function exportarExcel(nfs, saidas) {
 // ROMANEIO PDF (com logo)
 // ─────────────────────────────────────────────────────────────────
 
-function _buildRomaneioPDF(saida, alocacoes, config = {}) {
+function _buildRomaneioPDF(saida, alocacoes, config = {}, alocacoesCompanion = []) {
   const pdoc  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   const W     = 210
   const DARK  = [15, 40, 80]
@@ -731,11 +743,15 @@ function _buildRomaneioPDF(saida, alocacoes, config = {}) {
   }
   y += 14
 
+  const percAbatPDF   = saida.percentual_abatimento || PERCENTUAL_ABATIMENTO
+  const percLblPDF    = `${(percAbatPDF * 100).toFixed(1).replace('.', ',')}%`
+  const isEsp135612PDF = (saida.codigo_material || saida.codigo_produto) === MATERIAL_ESPECIAL_135612.codigo
+
   if (temAbat) {
     pdoc.setFont('helvetica', 'bold'); pdoc.setFontSize(9); pdoc.setTextColor(...DARK)
-    pdoc.text('Volume a Debitar do Estoque (com abat. 1,5%):', col1, y)
+    pdoc.text(`Volume a Debitar do Estoque (com abat. ${percLblPDF}):`, col1, y)
     pdoc.setTextColor(...MED)
-    pdoc.text(fmtKg(saida.volume_abatido_kg), col1 + 88, y)
+    pdoc.text(fmtKg(saida.volume_abatido_kg), col1 + 96, y)
     y += 12
   } else {
     pdoc.setFont('helvetica', 'bold'); pdoc.setFontSize(9); pdoc.setTextColor(...DARK)
@@ -747,7 +763,7 @@ function _buildRomaneioPDF(saida, alocacoes, config = {}) {
 
   y += 6
 
-  // ── Tabela FIFO ────────────────────────────────────────
+  // ── Tabela FIFO principal ──────────────────────────────
   pdoc.setFillColor(...DARK); pdoc.setTextColor(...WHITE)
   pdoc.setFontSize(10); pdoc.setFont('helvetica', 'bold')
   pdoc.roundedRect(14, y, W - 28, 9, 2, 2, 'F')
@@ -774,6 +790,61 @@ function _buildRomaneioPDF(saida, alocacoes, config = {}) {
     columnStyles:       { 2: { halign: 'right' } },
   })
 
+  // ── Tabela companion — apenas material 135612 ──────────
+  if (isEsp135612PDF && alocacoesCompanion.length > 0) {
+    y = pdoc.lastAutoTable.finalY + 8
+
+    const AMBER = [180, 100, 0]
+    pdoc.setFillColor(...AMBER); pdoc.setTextColor(...WHITE)
+    pdoc.setFontSize(9); pdoc.setFont('helvetica', 'bold')
+    pdoc.roundedRect(14, y, W - 28, 9, 2, 2, 'F')
+    const volAbatTotal = saida.volume_abatimento_kg
+      ? fmtKg(saida.volume_abatimento_kg)
+      : fmtKg(alocacoesCompanion.reduce((s, a) => s + Number(a.volume_alocado_kg), 0))
+    pdoc.text(`ABATIMENTO ÓLEO DE ENCIMAGEM ESPECIAL (${percLblPDF}) — ${volAbatTotal}`, W / 2, y + 6, { align: 'center' })
+    y += 11
+
+    // Agrupa por material companion
+    const porMaterial = {}
+    for (const aloc of alocacoesCompanion) {
+      const cod = aloc.codigo_material_companion || aloc.codigo_material || '?'
+      if (!porMaterial[cod]) porMaterial[cod] = []
+      porMaterial[cod].push(aloc)
+    }
+    const dist = MATERIAL_ESPECIAL_135612.distribuicao
+
+    const bodyComp = []
+    const footTotalComp = { vol: 0 }
+    for (const d of dist) {
+      const alocs = porMaterial[d.codigo_material] || []
+      for (const aloc of alocs) {
+        bodyComp.push([
+          `${d.codigo_material} (${(d.percentual * 100).toFixed(0)}%)`,
+          aloc.numero_nf,
+          aloc.data_emissao ? format(new Date(aloc.data_emissao), 'dd/MM/yyyy') : '—',
+          fmtKg(aloc.volume_alocado_kg),
+        ])
+        footTotalComp.vol += Number(aloc.volume_alocado_kg)
+      }
+    }
+
+    autoTable(pdoc, {
+      startY: y,
+      margin: { left: 14, right: 14 },
+      head: [['Material', 'NF de Entrada', 'Data de Emissão', 'Volume Debitado (kg)']],
+      body: bodyComp,
+      foot: [[
+        { content: 'TOTAL', colSpan: 3, styles: { fontStyle: 'bold' } },
+        { content: fmtKg(footTotalComp.vol), styles: { fontStyle: 'bold' } },
+      ]],
+      headStyles:         { fillColor: [180, 100, 0], textColor: WHITE, fontStyle: 'bold', fontSize: 8 },
+      bodyStyles:         { textColor: [30, 30, 60], fontSize: 8 },
+      footStyles:         { fillColor: [255, 240, 200], textColor: DARK, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [255, 248, 230] },
+      columnStyles:       { 3: { halign: 'right' } },
+    })
+  }
+
   // ── Assinatura ─────────────────────────────────────────
   const signY = pdoc.lastAutoTable.finalY + 14
   pdoc.setDrawColor(...MED); pdoc.setLineWidth(0.3)
@@ -793,14 +864,14 @@ function _buildRomaneioPDF(saida, alocacoes, config = {}) {
   return pdoc
 }
 
-export function gerarRomaneioPDF(saida, alocacoes, config = {}) {
-  const pdoc = _buildRomaneioPDF(saida, alocacoes, config)
+export function gerarRomaneioPDF(saida, alocacoes, config = {}, alocacoesCompanion = []) {
+  const pdoc = _buildRomaneioPDF(saida, alocacoes, config, alocacoesCompanion)
   pdoc.save(`romaneio_${saida.romaneio_microdata}_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`)
 }
 
-export function gerarRomaneioBase64(saida, alocacoes, config = {}) {
-  const pdoc = _buildRomaneioPDF(saida, alocacoes, config)
-  return pdoc.output('datauristring').split(',')[1] // retorna base64 puro
+export function gerarRomaneioBase64(saida, alocacoes, config = {}, alocacoesCompanion = []) {
+  const pdoc = _buildRomaneioPDF(saida, alocacoes, config, alocacoesCompanion)
+  return pdoc.output('datauristring').split(',')[1]
 }
 
 

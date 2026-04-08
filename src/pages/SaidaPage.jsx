@@ -205,10 +205,23 @@ function ConfirmacaoModal({ form, preview, previewsCompanion, onConfirm, onCance
 
 // ── Modal de Sucesso ───────────────────────────────────────────────────────
 function SucessoModal({ ultimaSaida, onClose, onPDF }) {
-  const s = ultimaSaida.saida
+  const s            = ultimaSaida.saida
+  const alocComp     = ultimaSaida.alocacoesCompanion || []
+  const isEsp135612  = s.codigo_material === MATERIAL_ESPECIAL_135612.codigo
+  const percAbatPct  = s.percentual_abatimento ? `${(s.percentual_abatimento * 100).toFixed(1).replace('.', ',')}%` : '3,5%'
+
+  // Agrupa companion por material
+  const compPorMat = {}
+  for (const aloc of alocComp) {
+    const cod = aloc.codigo_material_companion || '?'
+    if (!compPorMat[cod]) compPorMat[cod] = { volume: 0, nfs: [] }
+    compPorMat[cod].volume += Number(aloc.volume_alocado_kg)
+    compPorMat[cod].nfs.push(aloc)
+  }
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{maxWidth:520}} onClick={e => e.stopPropagation()}>
+      <div className="modal" style={{maxWidth:560}} onClick={e => e.stopPropagation()}>
         <div className="modal-title" style={{color:'var(--accent-2)'}}>✓ Saída Registrada!</div>
 
         <div className="abatimento-box" style={{marginBottom:16}}>
@@ -237,17 +250,17 @@ function SucessoModal({ ultimaSaida, onClose, onPDF }) {
             </div>
           )}
           <div className="abatimento-row">
-            <span className="abatimento-label">Volume Debitado do Estoque</span>
+            <span className="abatimento-label">Volume Debitado do Estoque (Mat. {s.codigo_material})</span>
             <span className="abatimento-value highlight">{fmt(s.volume_abatido_kg)} kg</span>
           </div>
         </div>
 
         <div style={{fontSize:12, fontWeight:600, color:'var(--blue-200)', marginBottom:10, textTransform:'uppercase', letterSpacing:'0.04em'}}>
-          Alocações FIFO
+          Alocações FIFO — Mat. {s.codigo_material}
         </div>
-        <div className="table-wrap" style={{marginBottom:16}}>
+        <div className="table-wrap" style={{marginBottom: isEsp135612 && alocComp.length ? 16 : 0}}>
           <table>
-            <thead><tr><th>NF</th><th>Emissão</th><th className="td-right">Abatido (kg)</th></tr></thead>
+            <thead><tr><th>NF</th><th>Emissão</th><th className="td-right">Debitado (kg)</th></tr></thead>
             <tbody>
               {ultimaSaida.alocacoes.map((a, i) => (
                 <tr key={i}>
@@ -260,7 +273,41 @@ function SucessoModal({ ultimaSaida, onClose, onPDF }) {
           </table>
         </div>
 
-        <div className="modal-actions">
+        {/* Seção companion — apenas 135612 */}
+        {isEsp135612 && alocComp.length > 0 && (
+          <>
+            <div style={{fontSize:12, fontWeight:600, color:'var(--warn)', margin:'16px 0 10px', textTransform:'uppercase', letterSpacing:'0.04em'}}>
+              Abatimento Óleo de Encimagem Especial ({percAbatPct}) — {fmt(s.volume_abatimento_kg ?? alocComp.reduce((a,c) => a + Number(c.volume_alocado_kg), 0))} kg
+            </div>
+            {MATERIAL_ESPECIAL_135612.distribuicao.map(dist => {
+              const grupo = compPorMat[dist.codigo_material]
+              if (!grupo) return null
+              return (
+                <div key={dist.codigo_material} style={{marginBottom:10}}>
+                  <div style={{fontSize:11, fontWeight:700, color:'var(--text-dim)', marginBottom:4}}>
+                    Mat. {dist.codigo_material} — {(dist.percentual * 100).toFixed(0)}% = {fmt(grupo.volume)} kg
+                  </div>
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>NF</th><th>Emissão</th><th className="td-right">Debitado (kg)</th></tr></thead>
+                      <tbody>
+                        {grupo.nfs.map((a, i) => (
+                          <tr key={i}>
+                            <td className="td-mono">{a.numero_nf}</td>
+                            <td>{a.data_emissao ? format(new Date(a.data_emissao), 'dd/MM/yyyy') : '—'}</td>
+                            <td className="td-right td-mono">{fmt(a.volume_alocado_kg)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )
+            })}
+          </>
+        )}
+
+        <div className="modal-actions" style={{marginTop:16}}>
           <button className="btn btn-ghost" onClick={onClose}>Fechar</button>
           <button className="btn btn-success" onClick={onPDF}>📄 Gerar PDF</button>
         </div>
@@ -284,6 +331,9 @@ export default function SaidaPage() {
   const [config, setConfig]           = useState({})
   const [confirmDeleteSaida, setConfirmDeleteSaida] = useState(null)
   const [emailLoading, setEmailLoading] = useState(false)
+  // Override manual do abatimento para material 135612
+  const [abatimentoOverride, setAbatimentoOverride] = useState(null)   // null = usa cálculo automático
+  const [editandoAbatimento, setEditandoAbatimento] = useState(false)
 
   // Offline
   const [isOnline, setIsOnline]       = useState(navigator.onLine)
@@ -431,12 +481,19 @@ export default function SaidaPage() {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   // Cálculos do formulário
-  const volumeLiq       = parseFloat(form.volume_liquido_kg) || 0
-  const temAbatimento   = TIPOS_COM_ABATIMENTO.includes(form.tipo_saida)
+  const volumeLiq        = parseFloat(form.volume_liquido_kg) || 0
+  const temAbatimento    = TIPOS_COM_ABATIMENTO.includes(form.tipo_saida)
   const isEspecial135612 = form.codigo_material === MATERIAL_ESPECIAL_135612.codigo
-  const percAbat        = getPercentualAbatimento(form.codigo_material)
-  const volumeAbatido   = calcularVolumeAbatido(volumeLiq, form.tipo_saida, form.codigo_material)
-  const volumeAbatimento = temAbatimento ? volumeLiq * percAbat : 0
+  const percAbat         = getPercentualAbatimento(form.codigo_material)
+  // volumeAbatimento: valor efetivo do abatimento companion (pode ser override manual)
+  const volumeAbatimentoBase = temAbatimento ? volumeLiq * percAbat : 0
+  const volumeAbatimento = (isEspecial135612 && abatimentoOverride != null)
+    ? abatimentoOverride
+    : volumeAbatimentoBase
+  // volumeAbatido: o que é debitado das NFs do próprio material 135612
+  const volumeAbatido = isEspecial135612 && temAbatimento
+    ? volumeLiq - volumeAbatimento
+    : calcularVolumeAbatido(volumeLiq, form.tipo_saida, form.codigo_material)
 
   // Saldo disponível filtrado por código do material + lote POY da unidade ativa
   const nfsFiltradas = useMemo(() => {
@@ -454,6 +511,12 @@ export default function SaidaPage() {
   const totalSaldo       = nfsFiltradas.reduce((a, n) => a + Number(n.volume_saldo_kg), 0)
   const saldoInsuficiente = volumeAbatido > totalSaldo + 0.01
 
+  // Limpa override quando troca de material
+  useEffect(() => {
+    setAbatimentoOverride(null)
+    setEditandoAbatimento(false)
+  }, [form.codigo_material])
+
   const handlePreConfirm = async () => {
     if (!form.romaneio_microdata || !form.codigo_material || !form.lote_poy || !form.tipo_saida || !form.volume_liquido_kg) {
       toast('Preencha os campos obrigatórios (*).', 'error'); return
@@ -465,10 +528,11 @@ export default function SaidaPage() {
       toast(`Saldo insuficiente! Disponível para este material/lote: ${fmt(totalSaldo)} kg`, 'error'); return
     }
     const { preview, previewsCompanion } = await previewFIFO(volumeAbatido, {
-      codigoMaterial: form.codigo_material,
-      lotePoy:        form.lote_poy,
-      unidadeId:      unidadeAtiva || '',
-      volumeLiquido:  volumeLiq,
+      codigoMaterial:           form.codigo_material,
+      lotePoy:                  form.lote_poy,
+      unidadeId:                unidadeAtiva || '',
+      volumeLiquido:            volumeLiq,
+      volumeAbatimentoOverride: isEspecial135612 ? volumeAbatimento : null,
     })
     setConfirmacao({ preview, previewsCompanion })
   }
@@ -480,10 +544,11 @@ export default function SaidaPage() {
       lote_poy:           form.lote_poy.trim(),
       lote_acabado:       form.lote_acabado.trim(),
       tipo_saida:         form.tipo_saida,
-      volume_liquido_kg:  volumeLiq,
-      volume_bruto_kg:    form.volume_bruto_kg ? parseFloat(form.volume_bruto_kg) : null,
-      quantidade:         form.quantidade.trim() || null,
-      unidade_id:         unidadeAtiva || '',
+      volume_liquido_kg:           volumeLiq,
+      volume_bruto_kg:             form.volume_bruto_kg ? parseFloat(form.volume_bruto_kg) : null,
+      quantidade:                  form.quantidade.trim() || null,
+      unidade_id:                  unidadeAtiva || '',
+      volume_abatimento_override:  isEspecial135612 ? volumeAbatimento : null,
     }
 
     // Se offline: enfileira
@@ -511,8 +576,8 @@ export default function SaidaPage() {
     }
   }
 
-  const handleGerarPDF = (saida, alocacoes) => {
-    gerarRomaneioPDF(saida, alocacoes, config)
+  const handleGerarPDF = (saida, alocacoes, alocacoesCompanion = []) => {
+    gerarRomaneioPDF(saida, alocacoes, config, alocacoesCompanion)
     toast('Romaneio PDF gerado!')
   }
 
@@ -522,7 +587,12 @@ export default function SaidaPage() {
     if (!user?.email) { toast('E-mail do usuário não encontrado.', 'error'); return }
     setEmailLoading(true)
     try {
-      const pdfBase64 = gerarRomaneioBase64(ultimaSaida.saida, ultimaSaida.alocacoes, config)
+      const pdfBase64 = gerarRomaneioBase64(
+        ultimaSaida.saida,
+        ultimaSaida.alocacoes,
+        config,
+        ultimaSaida.alocacoesCompanion || []
+      )
       const res = await fetch('/api/send-romaneio', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -554,9 +624,10 @@ export default function SaidaPage() {
       // Para cada resultado do lote, precisamos reconstruir a saída com alocações
       // loteResultados: [{romaneio, nf, volLiq, res}]
       const romaneiosPayload = loteResultados.map(r => {
-        const saidaObj = r.res?.saida || {}
-        const alocObj  = r.res?.alocacoes || []
-        const pdfBase64 = gerarRomaneioBase64(saidaObj, alocObj, config)
+        const saidaObj    = r.res?.saida || {}
+        const alocObj     = r.res?.alocacoes || []
+        const alocCompObj = r.res?.alocacoesCompanion || []
+        const pdfBase64   = gerarRomaneioBase64(saidaObj, alocObj, config, alocCompObj)
         return { ...saidaObj, pdfBase64 }
       })
       const res = await fetch('/api/send-romaneio', {
@@ -778,14 +849,56 @@ export default function SaidaPage() {
                   <span className="abatimento-badge" style={{marginLeft:6}}>
                     {TIPOS_SAIDA.find(t => t.value === form.tipo_saida)?.label}
                   </span>
+                  {isEspecial135612 && abatimentoOverride != null && (
+                    <span style={{marginLeft:6, fontSize:10, background:'var(--accent)', color:'#fff', borderRadius:4, padding:'1px 6px', fontWeight:700}}>EDITADO</span>
+                  )}
                 </span>
-                <span className="abatimento-value" style={{color:'var(--warn)'}}>− {fmt(volumeAbatimento)} kg</span>
+                <span className="abatimento-value" style={{color:'var(--warn)', display:'flex', alignItems:'center', gap:6}}>
+                  − {fmt(volumeAbatimento)} kg
+                  {isEspecial135612 && temAbatimento && (
+                    <button
+                      title="Editar valor do abatimento"
+                      onClick={() => setEditandoAbatimento(v => !v)}
+                      style={{background:'none', border:'1px solid var(--warn)', borderRadius:4, color:'var(--warn)', cursor:'pointer', fontSize:11, padding:'1px 6px', lineHeight:1.4}}
+                    >✏</button>
+                  )}
+                  {isEspecial135612 && abatimentoOverride != null && (
+                    <button
+                      title="Restaurar cálculo automático"
+                      onClick={() => { setAbatimentoOverride(null); setEditandoAbatimento(false) }}
+                      style={{background:'none', border:'1px solid var(--accent-2)', borderRadius:4, color:'var(--accent-2)', cursor:'pointer', fontSize:10, padding:'1px 5px', lineHeight:1.4}}
+                    >↺</button>
+                  )}
+                </span>
+              </div>
+            )}
+            {/* Campo de edição inline do abatimento */}
+            {isEspecial135612 && temAbatimento && editandoAbatimento && (
+              <div style={{display:'flex', alignItems:'center', gap:8, padding:'8px 0 4px', borderTop:'1px dashed var(--border)'}}>
+                <span style={{fontSize:12, color:'var(--text-dim)', whiteSpace:'nowrap'}}>Abatimento (kg):</span>
+                <input
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  style={{width:110, padding:'4px 8px', borderRadius:6, border:'1px solid var(--warn)', background:'var(--bg-2)', color:'var(--text)', fontSize:13}}
+                  value={abatimentoOverride ?? volumeAbatimentoBase.toFixed(3)}
+                  onChange={e => setAbatimentoOverride(parseFloat(e.target.value) || 0)}
+                />
+                <span style={{fontSize:12, color:'var(--text-dim)'}}>kg</span>
+                <button
+                  className="btn btn-sm"
+                  style={{background:'var(--accent)', color:'#fff', fontSize:11, padding:'3px 10px'}}
+                  onClick={() => setEditandoAbatimento(false)}
+                >OK</button>
+                <span style={{fontSize:11, color:'var(--text-dim)'}}>
+                  Auto: {fmt(volumeAbatimentoBase)} kg
+                </span>
               </div>
             )}
             <div style={{borderTop:'1px solid var(--border)', paddingTop:8, marginTop:4}}>
               <div className="abatimento-row">
                 <span className="abatimento-label" style={{fontWeight:700}}>
-                  {temAbatimento ? 'Volume a Debitar do Estoque' : 'Volume a Debitar do Estoque'}
+                  Volume a Debitar do Estoque
                 </span>
                 <span className="abatimento-value highlight">{fmt(volumeAbatido)} kg</span>
               </div>
@@ -1087,7 +1200,12 @@ export default function SaidaPage() {
                     <td style={{whiteSpace:'nowrap'}}>
                       <div style={{display:'flex', gap:2}}>
                         <button className="btn btn-ghost btn-sm" title="Gerar Romaneio PDF"
-                          onClick={() => handleGerarPDF(s, s.alocacao_saida || [])}>📄</button>
+                          onClick={() => {
+                            const todasAloc = s.alocacao_saida || []
+                            const alocPrinc = todasAloc.filter(a => !a.codigo_material_companion)
+                            const alocComp  = todasAloc.filter(a =>  a.codigo_material_companion)
+                            handleGerarPDF(s, alocPrinc, alocComp)
+                          }}>📄</button>
                         {!isSupervisor && (
                         <button className="btn btn-ghost btn-sm" title="Excluir saída"
                           onClick={() => setConfirmDeleteSaida(s)}
@@ -1118,7 +1236,7 @@ export default function SaidaPage() {
         <SucessoModal
           ultimaSaida={ultimaSaida}
           onClose={() => setUltimaSaida(null)}
-          onPDF={() => handleGerarPDF(ultimaSaida.saida, ultimaSaida.alocacoes)}
+          onPDF={() => handleGerarPDF(ultimaSaida.saida, ultimaSaida.alocacoes, ultimaSaida.alocacoesCompanion || [])}
         />
       )}
 
