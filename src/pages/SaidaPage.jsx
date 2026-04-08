@@ -2,7 +2,8 @@ import { useEffect, useState, useMemo, useCallback } from 'react'
 import {
   listarSaidas, criarSaida, deletarSaida, listarNFsEntrada, previewFIFO,
   TIPOS_SAIDA, TIPOS_COM_ABATIMENTO,
-  calcularVolumeAbatido, gerarRomaneioPDF, gerarRomaneioBase64, exportarExcel, carregarConfig
+  calcularVolumeAbatido, getPercentualAbatimento, MATERIAL_ESPECIAL_135612,
+  gerarRomaneioPDF, gerarRomaneioBase64, exportarExcel, carregarConfig
 } from '../lib/faconagem'
 import { useAuth } from '../lib/AuthContext'
 import { useUser } from '../lib/UserContext'
@@ -39,15 +40,19 @@ function tipoBadge(tipo) {
 const fmt = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 // ── Modal de Confirmação FIFO ─────────────────────────────────────────────
-function ConfirmacaoModal({ form, preview, onConfirm, onCancel, loading }) {
-  const volumeLiq  = parseFloat(form.volume_liquido_kg) || 0
-  const temAbat    = TIPOS_COM_ABATIMENTO.includes(form.tipo_saida)
-  const volumeFinal = calcularVolumeAbatido(volumeLiq, form.tipo_saida)
-  const tipoLbl    = TIPOS_SAIDA.find(t => t.value === form.tipo_saida)?.label || ''
+function ConfirmacaoModal({ form, preview, previewsCompanion, onConfirm, onCancel, loading }) {
+  const volumeLiq    = parseFloat(form.volume_liquido_kg) || 0
+  const temAbat      = TIPOS_COM_ABATIMENTO.includes(form.tipo_saida)
+  const isEsp135612  = form.codigo_material === MATERIAL_ESPECIAL_135612.codigo
+  const percAbat     = getPercentualAbatimento(form.codigo_material)
+  const volumeFinal  = calcularVolumeAbatido(volumeLiq, form.tipo_saida, form.codigo_material)
+  const volumeAbat   = temAbat ? volumeLiq * percAbat : 0
+  const tipoLbl      = TIPOS_SAIDA.find(t => t.value === form.tipo_saida)?.label || ''
+  const percLabel    = `${(percAbat * 100).toFixed(1).replace('.', ',')}%`
 
   return (
     <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal" style={{maxWidth:580}} onClick={e => e.stopPropagation()}>
+      <div className="modal" style={{maxWidth:600}} onClick={e => e.stopPropagation()}>
         <div className="modal-title">⚡ Confirmar Saída</div>
 
         <div className="abatimento-box" style={{marginBottom:16}}>
@@ -87,23 +92,27 @@ function ConfirmacaoModal({ form, preview, onConfirm, onCancel, loading }) {
           )}
           {temAbat && (
             <div className="abatimento-row">
-              <span className="abatimento-label">Abatimento 1,5% ({tipoLbl})</span>
-              <span className="abatimento-value" style={{color:'var(--warn)'}}>− {fmt(volumeLiq - volumeFinal)} kg</span>
+              <span className="abatimento-label">
+                Abatimento {percLabel}
+                {isEsp135612 && <span style={{marginLeft:6, fontSize:10, background:'var(--warn)', color:'#000', borderRadius:4, padding:'1px 6px', fontWeight:700}}>REGRA 135612</span>}
+                {' '}({tipoLbl})
+              </span>
+              <span className="abatimento-value" style={{color:'var(--warn)'}}>− {fmt(volumeAbat)} kg</span>
             </div>
           )}
           <div style={{borderTop:'1px solid var(--border)', paddingTop:8, marginTop:4}}>
             <div className="abatimento-row">
-              <span className="abatimento-label" style={{fontWeight:700}}>Volume a Debitar do Estoque</span>
+              <span className="abatimento-label" style={{fontWeight:700}}>Volume a Debitar do Estoque (Mat. {form.codigo_material})</span>
               <span className="abatimento-value highlight">{fmt(volumeFinal)} kg</span>
             </div>
           </div>
         </div>
 
         <div style={{fontSize:12, fontWeight:600, color:'var(--blue-200)', marginBottom:10, textTransform:'uppercase', letterSpacing:'0.04em'}}>
-          Débito nas NFs de Entrada (FIFO):
+          Débito nas NFs de Entrada — Mat. {form.codigo_material} (FIFO):
         </div>
 
-        <div className="table-wrap" style={{marginBottom:4}}>
+        <div className="table-wrap" style={{marginBottom: isEsp135612 && previewsCompanion?.length ? 16 : 4}}>
           <table>
             <thead>
               <tr>
@@ -129,6 +138,59 @@ function ConfirmacaoModal({ form, preview, onConfirm, onCancel, loading }) {
             </tbody>
           </table>
         </div>
+
+        {/* Seção companion — apenas para material 135612 */}
+        {isEsp135612 && previewsCompanion?.length > 0 && (
+          <>
+            <div style={{fontSize:12, fontWeight:600, color:'var(--warn)', marginBottom:10, textTransform:'uppercase', letterSpacing:'0.04em'}}>
+              Débito do Abatimento ({percLabel}) — Matérias-primas de Entrada:
+            </div>
+            {previewsCompanion.map((comp, ci) => (
+              <div key={ci} style={{marginBottom:12}}>
+                <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6}}>
+                  <span style={{fontSize:12, fontWeight:700, color:'var(--text-dim)'}}>
+                    Mat. {comp.codigo_material}
+                    <span style={{marginLeft:6, color:'var(--blue-200)', fontWeight:400}}>
+                      ({(comp.percentual * 100).toFixed(0)}% = {fmt(comp.volume)} kg)
+                    </span>
+                  </span>
+                  {comp.saldoInsuficiente && (
+                    <span style={{fontSize:11, color:'var(--danger)', fontWeight:600}}>⚠ Saldo insuficiente</span>
+                  )}
+                </div>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>NF</th>
+                        <th>Emissão</th>
+                        <th className="td-right">Saldo Atual</th>
+                        <th className="td-right">Será Debitado</th>
+                        <th className="td-right">Saldo Restante</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {comp.preview.map((p, i) => (
+                        <tr key={i}>
+                          <td className="td-mono" style={{fontWeight:600}}>{p.numero_nf}</td>
+                          <td style={{fontSize:12}}>{p.data_emissao ? format(new Date(p.data_emissao), 'dd/MM/yyyy') : '—'}</td>
+                          <td className="td-right td-mono">{fmt(p.saldo_atual)}</td>
+                          <td className="td-right td-mono" style={{color:'var(--warn)', fontWeight:600}}>− {fmt(p.volume_alocado_kg)}</td>
+                          <td className="td-right td-mono" style={{color: (p.saldo_atual - p.volume_alocado_kg) <= 0.01 ? 'var(--danger)' : 'var(--accent-2)'}}>
+                            {fmt(Math.max(0, p.saldo_atual - p.volume_alocado_kg))}
+                          </td>
+                        </tr>
+                      ))}
+                      {comp.preview.length === 0 && (
+                        <tr><td colSpan={5} style={{textAlign:'center', color:'var(--danger)', fontSize:12}}>Sem NFs com saldo para este material</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+          </>
+        )}
 
         <div className="modal-actions">
           <button className="btn btn-ghost" onClick={onCancel} disabled={loading}>Cancelar</button>
@@ -369,9 +431,12 @@ export default function SaidaPage() {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   // Cálculos do formulário
-  const volumeLiq     = parseFloat(form.volume_liquido_kg) || 0
-  const temAbatimento = TIPOS_COM_ABATIMENTO.includes(form.tipo_saida)
-  const volumeAbatido = calcularVolumeAbatido(volumeLiq, form.tipo_saida)
+  const volumeLiq       = parseFloat(form.volume_liquido_kg) || 0
+  const temAbatimento   = TIPOS_COM_ABATIMENTO.includes(form.tipo_saida)
+  const isEspecial135612 = form.codigo_material === MATERIAL_ESPECIAL_135612.codigo
+  const percAbat        = getPercentualAbatimento(form.codigo_material)
+  const volumeAbatido   = calcularVolumeAbatido(volumeLiq, form.tipo_saida, form.codigo_material)
+  const volumeAbatimento = temAbatimento ? volumeLiq * percAbat : 0
 
   // Saldo disponível filtrado por código do material + lote POY da unidade ativa
   const nfsFiltradas = useMemo(() => {
@@ -399,12 +464,13 @@ export default function SaidaPage() {
     if (saldoInsuficiente) {
       toast(`Saldo insuficiente! Disponível para este material/lote: ${fmt(totalSaldo)} kg`, 'error'); return
     }
-    const { preview } = await previewFIFO(volumeAbatido, {
+    const { preview, previewsCompanion } = await previewFIFO(volumeAbatido, {
       codigoMaterial: form.codigo_material,
       lotePoy:        form.lote_poy,
       unidadeId:      unidadeAtiva || '',
+      volumeLiquido:  volumeLiq,
     })
-    setConfirmacao({ preview })
+    setConfirmacao({ preview, previewsCompanion })
   }
 
   const handleConfirmar = async () => {
@@ -516,9 +582,9 @@ export default function SaidaPage() {
   const handleZerarSaldo = () => {
     if (!form.tipo_saida || totalSaldo <= 0) return
     const temAbat = TIPOS_COM_ABATIMENTO.includes(form.tipo_saida)
-    // volume_abatido = volume_liquido * (1 - 0.015) → inverso:
+    const perc = getPercentualAbatimento(form.codigo_material)
     const volLiqZero = temAbat
-      ? (totalSaldo / (1 - 0.015)).toFixed(3)
+      ? (totalSaldo / (1 - perc)).toFixed(3)
       : totalSaldo.toFixed(3)
     set('volume_liquido_kg', volLiqZero)
   }
@@ -572,7 +638,7 @@ export default function SaidaPage() {
       <div className="page-header" style={{display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:12}}>
         <div>
           <div className="page-title"><span>↑</span> Saída de Material</div>
-          <div className="page-sub">Registro de saídas com abatimento 1,5% e alocação FIFO</div>
+          <div className="page-sub">Registro de saídas com abatimento FIFO (1,5% padrão · 3,5% para mat. 135612)</div>
         </div>
         <button className="btn btn-ghost" onClick={() => { exportarExcel(nfs, saidas); toast('Exportação concluída!') }}>
           📊 Excel
@@ -707,12 +773,13 @@ export default function SaidaPage() {
             {temAbatimento && (
               <div className="abatimento-row">
                 <span className="abatimento-label">
-                  Abatimento 1,5%
+                  Abatimento {(percAbat * 100).toFixed(1).replace('.', ',')}%
+                  {isEspecial135612 && <span style={{marginLeft:6, fontSize:10, background:'var(--warn)', color:'#000', borderRadius:4, padding:'1px 6px', fontWeight:700}}>REGRA 135612</span>}
                   <span className="abatimento-badge" style={{marginLeft:6}}>
                     {TIPOS_SAIDA.find(t => t.value === form.tipo_saida)?.label}
                   </span>
                 </span>
-                <span className="abatimento-value" style={{color:'var(--warn)'}}>− {fmt(volumeLiq - volumeAbatido)} kg</span>
+                <span className="abatimento-value" style={{color:'var(--warn)'}}>− {fmt(volumeAbatimento)} kg</span>
               </div>
             )}
             <div style={{borderTop:'1px solid var(--border)', paddingTop:8, marginTop:4}}>
@@ -733,14 +800,13 @@ export default function SaidaPage() {
                     className="btn btn-sm"
                     style={{background:'var(--accent)', color:'#fff', fontSize:11, padding:'4px 10px'}}
                     onClick={() => {
-                      // Calcula o volume líquido que resulta em volumeAbatido == totalSaldo
                       const novoLiq = temAbatimento
-                        ? totalSaldo / (1 - 0.015)
+                        ? totalSaldo / (1 - percAbat)
                         : totalSaldo
                       set('volume_liquido_kg', novoLiq.toFixed(4))
                     }}
                   >
-                    ↓ Ajustar para Zerar Saldo ({fmt(temAbatimento ? totalSaldo / (1 - 0.015) : totalSaldo)} kg)
+                    ↓ Ajustar para Zerar Saldo ({fmt(temAbatimento ? totalSaldo / (1 - percAbat) : totalSaldo)} kg)
                   </button>
                 )}
               </div>
@@ -801,7 +867,7 @@ export default function SaidaPage() {
           {/* Aviso abatimento */}
           {loteForm.tipo_saida && TIPOS_COM_ABATIMENTO.includes(loteForm.tipo_saida) && (
             <div style={{background:'rgba(255,180,0,0.08)', border:'1px solid var(--warn)', borderRadius:8, padding:'8px 12px', fontSize:12, color:'var(--warn)', marginBottom:14}}>
-              ⚠️ Abatimento de 1,5% será aplicado automaticamente em todos os romaneios deste lote.
+              ⚠️ Abatimento de {loteForm.codigo_material === MATERIAL_ESPECIAL_135612.codigo ? '3,5%' : '1,5%'} será aplicado automaticamente em todos os romaneios deste lote.
             </div>
           )}
 
@@ -866,7 +932,8 @@ export default function SaidaPage() {
                             <button title="Usar saldo total" style={{marginLeft:6, background:'none', border:'none', cursor:'pointer', fontSize:10, color:'var(--accent)', padding:0}}
                               onClick={() => {
                                 const temAbat = TIPOS_COM_ABATIMENTO.includes(loteForm.tipo_saida)
-                                const liq = temAbat ? (saldo / (1 - 0.015)).toFixed(3) : saldo.toFixed(3)
+                                const perc = getPercentualAbatimento(loteForm.codigo_material || '')
+                                const liq = temAbat ? (saldo / (1 - perc)).toFixed(3) : saldo.toFixed(3)
                                 setLinha(idx, 'volume_liquido_kg', liq)
                               }}>↓max</button>
                           </td>
@@ -1040,6 +1107,7 @@ export default function SaidaPage() {
         <ConfirmacaoModal
           form={form}
           preview={confirmacao.preview}
+          previewsCompanion={confirmacao.previewsCompanion}
           onConfirm={handleConfirmar}
           onCancel={() => setConfirmacao(null)}
           loading={loading}

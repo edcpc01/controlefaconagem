@@ -26,11 +26,26 @@ export const TIPOS_SAIDA = [
 
 export const PERCENTUAL_ABATIMENTO = 0.015
 
-export function calcularVolumeAbatido(volumeLiquido, tipoSaida) {
-  // O campo agora é "volume líquido" — o abatimento ainda se aplica sobre ele
-  return TIPOS_COM_ABATIMENTO.includes(tipoSaida)
-    ? volumeLiquido * (1 - PERCENTUAL_ABATIMENTO)
-    : volumeLiquido
+// Regra especial para material 135612: abatimento de 3,5% distribuído entre matérias-primas de entrada
+export const MATERIAL_ESPECIAL_135612 = {
+  codigo: '135612',
+  percentual_abatimento: 0.035,
+  distribuicao: [
+    { codigo_material: '142450', percentual: 0.60 },
+    { codigo_material: '140019', percentual: 0.30 },
+    { codigo_material: '98673',  percentual: 0.10 },
+  ],
+}
+
+export function getPercentualAbatimento(codigoMaterial) {
+  return codigoMaterial === MATERIAL_ESPECIAL_135612.codigo
+    ? MATERIAL_ESPECIAL_135612.percentual_abatimento
+    : PERCENTUAL_ABATIMENTO
+}
+
+export function calcularVolumeAbatido(volumeLiquido, tipoSaida, codigoMaterial = '') {
+  if (!TIPOS_COM_ABATIMENTO.includes(tipoSaida)) return volumeLiquido
+  return volumeLiquido * (1 - getPercentualAbatimento(codigoMaterial))
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -297,32 +312,48 @@ export async function criarNFsEntradaLote(itens, usuario) {
 // PREVIEW FIFO (sem gravar — usado para confirmação)
 // ─────────────────────────────────────────────────────────────────
 
-export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unidadeId = '' } = {}) {
+export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unidadeId = '', volumeLiquido = null } = {}) {
   const snap = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
-  const nfsComSaldo = snap.docs.map(docToObj).filter(nf => {
+  const allNFs = snap.docs.map(docToObj)
+
+  const filtrarNFs = (codMat, lote) => allNFs.filter(nf => {
     if (Number(nf.volume_saldo_kg) <= 0.001) return false
-    // Filtra por unidade
     if (unidadeId && (nf.unidade_id || '') !== unidadeId) return false
-    // Filtra por código do material
-    if (codigoMaterial && nf.codigo_material !== codigoMaterial) return false
-    // Filtra por lote POY (compara os 4 primeiros dígitos)
-    if (lotePoy) {
-      const loteNF   = String(nf.lote || '').substring(0, 4)
-      const loteSaida = String(lotePoy).substring(0, 4)
+    if (codMat && nf.codigo_material !== codMat) return false
+    if (lote) {
+      const loteNF    = String(nf.lote || '').substring(0, 4)
+      const loteSaida = String(lote).substring(0, 4)
       if (loteNF !== loteSaida) return false
     }
     return true
   })
 
-  let restante = volumeAbatido
-  const preview = []
-  for (const nf of nfsComSaldo) {
-    if (restante <= 0) break
-    const alocar = Math.min(Number(nf.volume_saldo_kg), restante)
-    preview.push({ numero_nf: nf.numero_nf, data_emissao: nf.data_emissao, saldo_atual: nf.volume_saldo_kg, volume_alocado_kg: alocar })
-    restante -= alocar
+  const buildPreview = (nfsComSaldo, volume) => {
+    let restante = volume
+    const preview = []
+    for (const nf of nfsComSaldo) {
+      if (restante <= 0) break
+      const alocar = Math.min(Number(nf.volume_saldo_kg), restante)
+      preview.push({ numero_nf: nf.numero_nf, data_emissao: nf.data_emissao, saldo_atual: nf.volume_saldo_kg, volume_alocado_kg: alocar })
+      restante -= alocar
+    }
+    return { preview, saldoInsuficiente: restante > 0.01, faltando: restante }
   }
-  return { preview, saldoInsuficiente: restante > 0.01, faltando: restante }
+
+  const resultado = buildPreview(filtrarNFs(codigoMaterial, lotePoy), volumeAbatido)
+
+  // Regra especial 135612: o abatimento (3,5% do volume líquido) é debitado de NFs de materiais companion
+  if (codigoMaterial === MATERIAL_ESPECIAL_135612.codigo) {
+    const volLiq = volumeLiquido != null ? volumeLiquido : volumeAbatido / (1 - MATERIAL_ESPECIAL_135612.percentual_abatimento)
+    const volumeAbatimento = volLiq * MATERIAL_ESPECIAL_135612.percentual_abatimento
+    resultado.previewsCompanion = MATERIAL_ESPECIAL_135612.distribuicao.map(dist => {
+      const volDist = volumeAbatimento * dist.percentual
+      const { preview, saldoInsuficiente, faltando } = buildPreview(filtrarNFs(dist.codigo_material, null), volDist)
+      return { ...dist, volume: volDist, preview, saldoInsuficiente, faltando }
+    })
+  }
+
+  return resultado
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -336,9 +367,11 @@ export async function criarSaida(payload, usuario) {
     unidade_id = ''
   } = payload
 
-  const temAbatimento       = TIPOS_COM_ABATIMENTO.includes(tipo_saida)
-  const volume_abatido_kg   = calcularVolumeAbatido(volume_liquido_kg, tipo_saida)
-  const percentual_abatimento = temAbatimento ? PERCENTUAL_ABATIMENTO : 0
+  const temAbatimento         = TIPOS_COM_ABATIMENTO.includes(tipo_saida)
+  const isEspecial135612      = codigo_material === MATERIAL_ESPECIAL_135612.codigo
+  const volume_abatido_kg     = calcularVolumeAbatido(volume_liquido_kg, tipo_saida, codigo_material)
+  const percentual_abatimento = temAbatimento ? getPercentualAbatimento(codigo_material) : 0
+  const volume_abatimento_kg  = temAbatimento && isEspecial135612 ? volume_liquido_kg * MATERIAL_ESPECIAL_135612.percentual_abatimento : 0
 
   const snap = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
   const nfsComSaldo = snap.docs.map(docToObj).filter(nf => {
@@ -370,14 +403,49 @@ export async function criarSaida(payload, usuario) {
     throw new Error(`Saldo insuficiente. Disponível: ${saldoDisp.toFixed(4)} kg — Solicitado: ${volume_abatido_kg.toFixed(4)} kg.`)
   }
 
+  // ── Regra especial 135612: alocar o abatimento (3,5%) nos materiais companion ──
+  // nfsCompanionDebits: nf_entrada_id → { saldo_original, totalDebit }
+  const nfsCompanionDebits = {}
+  const alocacoesCompanion = []
+
+  if (isEspecial135612 && volume_abatimento_kg > 0) {
+    const snapComp = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
+    const todasNFsComp = snapComp.docs.map(docToObj)
+
+    for (const dist of MATERIAL_ESPECIAL_135612.distribuicao) {
+      const volDist = volume_abatimento_kg * dist.percentual
+      const nfsComp = todasNFsComp.filter(nf => {
+        if (Number(nf.volume_saldo_kg) <= 0.001) return false
+        if (unidade_id && (nf.unidade_id || '') !== unidade_id) return false
+        return nf.codigo_material === dist.codigo_material
+      })
+      let restComp = volDist
+      for (const nf of nfsComp) {
+        if (restComp <= 0) break
+        const alocar = Math.min(Number(nf.volume_saldo_kg), restComp)
+        alocacoesCompanion.push({
+          nf_entrada_id: nf.id, numero_nf: nf.numero_nf, data_emissao: nf.data_emissao,
+          volume_alocado_kg: alocar, codigo_material: dist.codigo_material,
+        })
+        if (!nfsCompanionDebits[nf.id]) nfsCompanionDebits[nf.id] = { saldo_original: Number(nf.volume_saldo_kg), totalDebit: 0 }
+        nfsCompanionDebits[nf.id].totalDebit += alocar
+        restComp -= alocar
+      }
+      if (restComp > 0.01) {
+        const saldoDisp = nfsComp.reduce((a, n) => a + Number(n.volume_saldo_kg), 0)
+        throw new Error(`Saldo insuficiente no material ${dist.codigo_material}. Disponível: ${saldoDisp.toFixed(4)} kg — Necessário: ${volDist.toFixed(4)} kg.`)
+      }
+    }
+  }
+
   const now      = Timestamp.now()
   const batch    = writeBatch(db)
   const saidaRef = doc(collection(db, 'saida'))
 
   batch.set(saidaRef, {
     romaneio_microdata,
-    codigo_material,            // campo padronizado (era codigo_produto)
-    codigo_produto: codigo_material, // mantém retrocompatibilidade
+    codigo_material,
+    codigo_produto: codigo_material,
     lote_poy,
     lote_acabado:   lote_acabado || '',
     tipo_saida,
@@ -391,22 +459,42 @@ export async function criarSaida(payload, usuario) {
     criado_em: now,
   })
 
+  // Alocações principais (material 135612 → suas próprias NFs)
   const alocacoesRetorno = []
   for (const aloc of alocacoes) {
     const alocRef  = doc(collection(db, 'alocacao_saida'))
     const alocData = {
       saida_id: saidaRef.id, nf_entrada_id: aloc.nf_entrada_id,
       numero_nf: aloc.numero_nf, data_emissao: aloc.data_emissao,
-      volume_alocado_kg: aloc.volume_alocado_kg, criado_em: now
+      volume_alocado_kg: aloc.volume_alocado_kg, criado_em: now,
     }
     batch.set(alocRef, alocData)
     alocacoesRetorno.push({ id: alocRef.id, ...alocData })
   }
-
   for (const aloc of alocacoes) {
     const nfOrig    = nfsComSaldo.find(n => n.id === aloc.nf_entrada_id)
     const novoSaldo = Number(nfOrig.volume_saldo_kg) - aloc.volume_alocado_kg
-    batch.update(doc(db, 'nf_entrada', aloc.nf_entrada_id), { volume_saldo_kg: novoSaldo, atualizado_em: now })
+    batch.update(doc(db, 'nf_entrada', aloc.nf_entrada_id), { volume_saldo_kg: Math.max(0, novoSaldo), atualizado_em: now })
+  }
+
+  // Alocações companion (abatimento 3,5% distribuído por material)
+  const alocacoesCompanionRetorno = []
+  for (const aloc of alocacoesCompanion) {
+    const alocRef  = doc(collection(db, 'alocacao_saida'))
+    const alocData = {
+      saida_id: saidaRef.id, nf_entrada_id: aloc.nf_entrada_id,
+      numero_nf: aloc.numero_nf, data_emissao: aloc.data_emissao,
+      volume_alocado_kg: aloc.volume_alocado_kg,
+      codigo_material_companion: aloc.codigo_material,
+      criado_em: now,
+    }
+    batch.set(alocRef, alocData)
+    alocacoesCompanionRetorno.push({ id: alocRef.id, ...alocData })
+  }
+  // Uma única update por NF companion (evita conflito no batch)
+  for (const [nfId, info] of Object.entries(nfsCompanionDebits)) {
+    const novoSaldo = info.saldo_original - info.totalDebit
+    batch.update(doc(db, 'nf_entrada', nfId), { volume_saldo_kg: Math.max(0, novoSaldo), atualizado_em: now })
   }
 
   await batch.commit()
@@ -424,6 +512,7 @@ export async function criarSaida(payload, usuario) {
       criado_em: now.toDate().toISOString()
     },
     alocacoes: alocacoesRetorno,
+    alocacoesCompanion: alocacoesCompanionRetorno,
   }
 }
 
