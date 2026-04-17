@@ -87,23 +87,42 @@ export default function UsersPage() {
       {/* Regras resumidas */}
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-title">Níveis de Acesso</div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 12 }}>
-          {[
-            { role:'admin',             label:'Administrador',    cor:'rgba(34,85,184,0.12)', bor:'rgba(34,85,184,0.25)', itens:['Acesso total ao sistema','Todas as operações','Gerencia usuários'] },
-            { role:'supervisor_rhodia', label:'Supervisor Rhodia',cor:'rgba(26,106,255,0.08)',bor:'rgba(26,106,255,0.2)', itens:['Visualização operação Rhodia','Sem registro de saídas','Sem acesso a usuários'] },
-            { role:'supervisor_nilit',  label:'Supervisor Nilit', cor:'rgba(0,200,100,0.08)', bor:'rgba(0,200,100,0.2)', itens:['Visualização operação Nilit','Sem registro de saídas','Sem acesso a usuários'] },
-            { role:'analista',          label:'Analista',         cor:'rgba(0,195,100,0.06)', bor:'rgba(0,195,100,0.15)',itens:['Operações do dia a dia','Vinculado à operação/unidade','Padrão para novos usuários'] },
-          ].map(r => (
-            <div key={r.role} style={{ padding:'14px 16px', background: r.cor, borderRadius:8, border:`1px solid ${r.bor}` }}>
-              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
-                <RoleBadge role={r.role} />
-                <span style={{ fontWeight:700, fontSize:13 }}>{r.label}</span>
-              </div>
-              <ul style={{ margin:0, padding:'0 0 0 16px', color:'var(--text-dim)', fontSize:12, lineHeight:1.8 }}>
-                {r.itens.map(i => <li key={i}>{i}</li>)}
-              </ul>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+          <div style={{ padding: '14px 16px', background: 'rgba(34,85,184,0.12)', borderRadius: 8, border: '1px solid rgba(34,85,184,0.25)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <RoleBadge role="admin" />
+              <span style={{ fontWeight: 700, fontSize: 14 }}>Administrador</span>
             </div>
-          ))}
+            <ul style={{ margin: 0, padding: '0 0 0 16px', color: 'var(--text-dim)', fontSize: 13, lineHeight: 1.8 }}>
+              <li>Acesso total ao sistema</li>
+              <li>Visualiza todas as unidades</li>
+              <li>Gerencia usuários e permissões</li>
+            </ul>
+          </div>
+          <div style={{ padding: '14px 16px', background: 'rgba(255,180,0,0.08)', borderRadius: 8, border: '1px solid rgba(255,180,0,0.25)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <RoleBadge role="supervisor" />
+              <span style={{ fontWeight: 700, fontSize: 14 }}>Supervisor</span>
+            </div>
+            <ul style={{ margin: 0, padding: '0 0 0 16px', color: 'var(--text-dim)', fontSize: 13, lineHeight: 1.8 }}>
+              <li>Visualização geral do sistema</li>
+              <li>Acesso a Dashboard, KPIs, Inventário</li>
+              <li>Sem registro de entradas e saídas</li>
+              <li>Sem acesso a usuários</li>
+            </ul>
+          </div>
+          <div style={{ padding: '14px 16px', background: 'rgba(0,195,100,0.08)', borderRadius: 8, border: '1px solid rgba(0,195,100,0.2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <RoleBadge role="analista" />
+              <span style={{ fontWeight: 700, fontSize: 14 }}>Analista</span>
+            </div>
+            <ul style={{ margin: 0, padding: '0 0 0 16px', color: 'var(--text-dim)', fontSize: 13, lineHeight: 1.8 }}>
+              <li>Acesso às operações do dia a dia</li>
+              <li>Vinculado à unidade cadastrada</li>
+              <li>Não pode gerenciar usuários</li>
+              <li>Nível padrão para novos cadastros</li>
+            </ul>
+          </div>
         </div>
       </div>
 
@@ -126,9 +145,8 @@ export default function UsersPage() {
                   <th>Nome</th>
                   <th>E-mail</th>
                   <th style={{ width: 140 }}>Nível</th>
-                  <th style={{ width: 180 }}>Unidade</th>
-                  <th style={{ width: 120 }}>Operação</th>
-                  <th style={{ width: 90 }}>Status</th>
+                  <th style={{ width: 200 }}>Unidade</th>
+                  <th style={{ width: 110 }}>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -156,8 +174,7 @@ export default function UsersPage() {
                             onChange={e => handleUpdate(u.id, 'role', e.target.value)}
                           >
                             <option value="admin">Admin</option>
-                            <option value="supervisor_rhodia">Supervisor Rhodia</option>
-                            <option value="supervisor_nilit">Supervisor Nilit</option>
+                            <option value="supervisor">Supervisor</option>
                             <option value="analista">Analista</option>
                           </select>
                         )}
@@ -165,7 +182,7 @@ export default function UsersPage() {
 
                       {/* Unidade — não se aplica a admin nem supervisor */}
                       <td>
-                        {(['admin','supervisor_rhodia','supervisor_nilit'].includes(u.role)) ? (
+                        {(u.role === 'admin' || u.role === 'supervisor') ? (
                           <span style={{ fontSize: 12, color: 'var(--text-dim)', fontStyle: 'italic' }}>
                             {u.role === 'admin' ? 'Todas' : '—'}
                           </span>
@@ -185,30 +202,11 @@ export default function UsersPage() {
                         )}
                       </td>
 
-                      {/* Operação */}
-                      <td>
-                        {u.role === 'analista' ? (
-                          <select
-                            className="form-select"
-                            style={{ padding: '4px 8px', fontSize: 12 }}
-                            value={u.operacao_id || ''}
-                            disabled={!!salvandoEu}
-                            onChange={e => handleUpdate(u.id, 'operacao_id', e.target.value)}
-                          >
-                            <option value="">Todas</option>
-                            <option value="rhodia">Rhodia</option>
-                            <option value="nilit">Nilit</option>
-                          </select>
-                        ) : (
-                          <span style={{ fontSize: 12, color: 'var(--text-dim)', fontStyle: 'italic' }}>—</span>
-                        )}
-                      </td>
-
                       {/* Status */}
                       <td>
                         {salvandoEu ? (
                           <span style={{ fontSize: 11, color: 'var(--accent)' }}>Salvando...</span>
-                        ) : ['admin','supervisor_rhodia','supervisor_nilit'].includes(u.role) || u.unidade_id ? (
+                        ) : u.role === 'admin' || u.role === 'supervisor' || u.unidade_id ? (
                           <span className="badge badge-green" style={{ fontSize: 10 }}>✓ OK</span>
                         ) : (
                           <span className="badge badge-warn" style={{ fontSize: 10 }}>⚠ Sem unidade</span>
