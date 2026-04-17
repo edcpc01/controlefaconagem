@@ -352,9 +352,13 @@ export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unid
   if (codigoMaterial === MATERIAL_ESPECIAL_135612.codigo) {
     const volLiq = volumeLiquido != null ? volumeLiquido : volumeAbatido / (1 - MATERIAL_ESPECIAL_135612.percentual_abatimento)
 <<<<<<< HEAD
+<<<<<<< HEAD
     const volumeAbatimento = volumeAbatimentoOverride != null
       ? volumeAbatimentoOverride
       : volLiq * MATERIAL_ESPECIAL_135612.percentual_abatimento
+=======
+    const volumeAbatimento = volLiq * MATERIAL_ESPECIAL_135612.percentual_abatimento
+>>>>>>> parent of 0aefc03 (V36)
 =======
     const volumeAbatimento = volLiq * MATERIAL_ESPECIAL_135612.percentual_abatimento
 >>>>>>> parent of 0aefc03 (V36)
@@ -455,7 +459,10 @@ export async function criarSaida(payload, usuario) {
     volume_abatido_kg,
     percentual_abatimento,
 <<<<<<< HEAD
+<<<<<<< HEAD
     volume_abatimento_kg: volume_abatimento_kg || null,
+=======
+>>>>>>> parent of 0aefc03 (V36)
 =======
 >>>>>>> parent of 0aefc03 (V36)
     unidade_id,

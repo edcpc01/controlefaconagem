@@ -224,9 +224,12 @@ export default function SaidaPage() {
   const [confirmDeleteSaida, setConfirmDeleteSaida] = useState(null)
   const [emailLoading, setEmailLoading] = useState(false)
 <<<<<<< HEAD
+<<<<<<< HEAD
   // Override manual do abatimento para material 135612
   const [abatimentoOverride, setAbatimentoOverride] = useState(null)
   const [editandoAbatimento, setEditandoAbatimento] = useState(false)
+=======
+>>>>>>> parent of 0aefc03 (V36)
 =======
 >>>>>>> parent of 0aefc03 (V36)
 
@@ -380,6 +383,7 @@ export default function SaidaPage() {
   const temAbatimento   = TIPOS_COM_ABATIMENTO.includes(form.tipo_saida)
   const isEspecial135612 = form.codigo_material === MATERIAL_ESPECIAL_135612.codigo
 <<<<<<< HEAD
+<<<<<<< HEAD
   const percAbat         = getPercentualAbatimento(form.codigo_material)
   const volumeAbatimentoBase = temAbatimento ? volumeLiq * percAbat : 0
   const volumeAbatimento = (isEspecial135612 && abatimentoOverride != null)
@@ -388,6 +392,11 @@ export default function SaidaPage() {
   const volumeAbatido = isEspecial135612 && temAbatimento
     ? volumeLiq - volumeAbatimento
     : calcularVolumeAbatido(volumeLiq, form.tipo_saida, form.codigo_material)
+=======
+  const percAbat        = getPercentualAbatimento(form.codigo_material)
+  const volumeAbatido   = calcularVolumeAbatido(volumeLiq, form.tipo_saida, form.codigo_material)
+  const volumeAbatimento = temAbatimento ? volumeLiq * percAbat : 0
+>>>>>>> parent of 0aefc03 (V36)
 =======
   const percAbat        = getPercentualAbatimento(form.codigo_material)
   const volumeAbatido   = calcularVolumeAbatido(volumeLiq, form.tipo_saida, form.codigo_material)
@@ -411,11 +420,14 @@ export default function SaidaPage() {
   const saldoInsuficiente = volumeAbatido > totalSaldo + 0.01
 
 <<<<<<< HEAD
+<<<<<<< HEAD
   useEffect(() => {
     setAbatimentoOverride(null)
     setEditandoAbatimento(false)
   }, [form.codigo_material])
 
+=======
+>>>>>>> parent of 0aefc03 (V36)
 =======
 >>>>>>> parent of 0aefc03 (V36)
   const handlePreConfirm = async () => {
@@ -743,7 +755,11 @@ export default function SaidaPage() {
                   </span>
                 </span>
 <<<<<<< HEAD
+<<<<<<< HEAD
                 <span className="abatimento-value" style={{color:'var(--warn)'}}>− {fmt(volumeLiq - volumeAbatido)} kg</span>
+=======
+                <span className="abatimento-value" style={{color:'var(--warn)'}}>− {fmt(volumeAbatimento)} kg</span>
+>>>>>>> parent of 0aefc03 (V36)
 =======
                 <span className="abatimento-value" style={{color:'var(--warn)'}}>− {fmt(volumeAbatimento)} kg</span>
 >>>>>>> parent of 0aefc03 (V36)
