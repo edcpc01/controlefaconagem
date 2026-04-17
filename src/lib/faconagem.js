@@ -317,7 +317,7 @@ export async function criarNFsEntradaLote(itens, usuario) {
 // PREVIEW FIFO (sem gravar — usado para confirmação)
 // ─────────────────────────────────────────────────────────────────
 
-export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unidadeId = '', volumeLiquido = null, volumeAbatimentoOverride = null } = {}) {
+export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unidadeId = '', volumeLiquido = null } = {}) {
   const snap = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
   const allNFs = snap.docs.map(docToObj)
 
@@ -351,13 +351,17 @@ export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unid
   // Regra especial 135612: o abatimento (3,5% do volume líquido) é debitado de NFs de materiais companion
   if (codigoMaterial === MATERIAL_ESPECIAL_135612.codigo) {
     const volLiq = volumeLiquido != null ? volumeLiquido : volumeAbatido / (1 - MATERIAL_ESPECIAL_135612.percentual_abatimento)
+<<<<<<< HEAD
     const volumeAbatimento = volumeAbatimentoOverride != null
       ? volumeAbatimentoOverride
       : volLiq * MATERIAL_ESPECIAL_135612.percentual_abatimento
+=======
+    const volumeAbatimento = volLiq * MATERIAL_ESPECIAL_135612.percentual_abatimento
+>>>>>>> parent of 0aefc03 (V36)
     resultado.previewsCompanion = MATERIAL_ESPECIAL_135612.distribuicao.map(dist => {
       const volDist = volumeAbatimento * dist.percentual
       const { preview, saldoInsuficiente, faltando } = buildPreview(filtrarNFs(dist.codigo_material, null), volDist)
-      return { ...dist, volume: volDist, volumeAbatimentoTotal: volumeAbatimento, preview, saldoInsuficiente, faltando }
+      return { ...dist, volume: volDist, preview, saldoInsuficiente, faltando }
     })
   }
 
@@ -372,20 +376,14 @@ export async function criarSaida(payload, usuario) {
   const {
     romaneio_microdata, codigo_material, lote_poy, lote_acabado,
     tipo_saida, volume_liquido_kg, volume_bruto_kg, quantidade,
-    unidade_id = '',
-    volume_abatimento_override = null,  // override manual do valor do abatimento (apenas 135612)
+    unidade_id = ''
   } = payload
 
   const temAbatimento         = TIPOS_COM_ABATIMENTO.includes(tipo_saida)
   const isEspecial135612      = codigo_material === MATERIAL_ESPECIAL_135612.codigo
   const volume_abatido_kg     = calcularVolumeAbatido(volume_liquido_kg, tipo_saida, codigo_material)
   const percentual_abatimento = temAbatimento ? getPercentualAbatimento(codigo_material) : 0
-  // volume_abatimento_kg: o valor que será distribuído entre os materiais companion
-  const volume_abatimento_kg  = temAbatimento && isEspecial135612
-    ? (volume_abatimento_override != null
-        ? Number(volume_abatimento_override)
-        : volume_liquido_kg * MATERIAL_ESPECIAL_135612.percentual_abatimento)
-    : 0
+  const volume_abatimento_kg  = temAbatimento && isEspecial135612 ? volume_liquido_kg * MATERIAL_ESPECIAL_135612.percentual_abatimento : 0
 
   const snap = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
   const allNFs = snap.docs.map(docToObj)
@@ -456,7 +454,10 @@ export async function criarSaida(payload, usuario) {
     quantidade:           quantidade || null,
     volume_abatido_kg,
     percentual_abatimento,
+<<<<<<< HEAD
     volume_abatimento_kg: volume_abatimento_kg || null,
+=======
+>>>>>>> parent of 0aefc03 (V36)
     unidade_id,
     usuario_email: usuario?.email || '',
     criado_em: now,
@@ -511,9 +512,7 @@ export async function criarSaida(payload, usuario) {
     saida: {
       id: saidaRef.id, romaneio_microdata, codigo_material, lote_poy, lote_acabado,
       tipo_saida, volume_liquido_kg, volume_bruto_kg, quantidade,
-      volume_abatido_kg, percentual_abatimento,
-      volume_abatimento_kg: volume_abatimento_kg || null,
-      unidade_id,
+      volume_abatido_kg, percentual_abatimento, unidade_id,
       criado_em: now.toDate().toISOString()
     },
     alocacoes: alocacoesRetorno,
