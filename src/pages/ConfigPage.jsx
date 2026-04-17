@@ -11,9 +11,10 @@ function Toast({ toasts }) {
 }
 
 function RoleBadge({ role }) {
-  if (role === 'admin')      return <span className="badge badge-blue"  style={{fontSize:12}}>Admin</span>
-  if (role === 'supervisor') return <span className="badge badge-warn"  style={{fontSize:12}}>Supervisor</span>
-  return                            <span className="badge badge-green" style={{fontSize:12}}>Analista</span>
+  if (role === 'admin')             return <span className="badge badge-blue"  style={{fontSize:12}}>Admin</span>
+  if (role === 'supervisor_rhodia') return <span className="badge" style={{fontSize:12,background:'rgba(26,106,255,0.2)',color:'#1a6aff'}}>Sup. Rhodia</span>
+  if (role === 'supervisor_nilit')  return <span className="badge" style={{fontSize:12,background:'rgba(0,200,100,0.2)',color:'#00c864'}}>Sup. Nilit</span>
+  return                                   <span className="badge badge-green" style={{fontSize:12}}>Analista</span>
 }
 
 export default function ConfigPage() {
@@ -121,7 +122,7 @@ export default function ConfigPage() {
               {unidadeLbl && (
                 <span style={{fontSize:12, color:'var(--text-dim)'}}>🏭 {unidadeLbl}</span>
               )}
-              {!unidadeLbl && roleLbl !== 'admin' && roleLbl !== 'supervisor' && (
+              {!unidadeLbl && !['admin','supervisor_rhodia','supervisor_nilit'].includes(roleLbl) && (
                 <span style={{fontSize:12, color:'var(--warn)'}}>⚠ Sem unidade vinculada</span>
               )}
             </div>
@@ -130,7 +131,7 @@ export default function ConfigPage() {
         </div>
 
         {/* Bootstrap: só aparece para analistas — não para supervisor nem admin */}
-        {roleLbl !== 'admin' && roleLbl !== 'supervisor' && (
+        {!['admin','supervisor_rhodia','supervisor_nilit'].includes(roleLbl) && (
           <div style={{
             marginTop: 16, padding: '14px 16px',
             background: 'rgba(255,200,0,0.07)',

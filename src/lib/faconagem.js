@@ -26,26 +26,11 @@ export const TIPOS_SAIDA = [
 
 export const PERCENTUAL_ABATIMENTO = 0.015
 
-// Regra especial para material 135612: abatimento de 3,5% distribuído entre matérias-primas de entrada
-export const MATERIAL_ESPECIAL_135612 = {
-  codigo: '135612',
-  percentual_abatimento: 0.035,
-  distribuicao: [
-    { codigo_material: '142450', percentual: 0.60 },
-    { codigo_material: '140019', percentual: 0.30 },
-    { codigo_material: '98673',  percentual: 0.10 },
-  ],
-}
-
-export function getPercentualAbatimento(codigoMaterial) {
-  return codigoMaterial === MATERIAL_ESPECIAL_135612.codigo
-    ? MATERIAL_ESPECIAL_135612.percentual_abatimento
-    : PERCENTUAL_ABATIMENTO
-}
-
-export function calcularVolumeAbatido(volumeLiquido, tipoSaida, codigoMaterial = '') {
-  if (!TIPOS_COM_ABATIMENTO.includes(tipoSaida)) return volumeLiquido
-  return volumeLiquido * (1 - getPercentualAbatimento(codigoMaterial))
+export function calcularVolumeAbatido(volumeLiquido, tipoSaida) {
+  // O campo agora é "volume líquido" — o abatimento ainda se aplica sobre ele
+  return TIPOS_COM_ABATIMENTO.includes(tipoSaida)
+    ? volumeLiquido * (1 - PERCENTUAL_ABATIMENTO)
+    : volumeLiquido
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -312,51 +297,32 @@ export async function criarNFsEntradaLote(itens, usuario) {
 // PREVIEW FIFO (sem gravar — usado para confirmação)
 // ─────────────────────────────────────────────────────────────────
 
-export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unidadeId = '', volumeLiquido = null, volumeAbatimentoOverride = null } = {}) {
+export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unidadeId = '' } = {}) {
   const snap = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
-  const allNFs = snap.docs.map(docToObj)
-
-  const filtrarNFs = (codMat, lote) => allNFs.filter(nf => {
+  const nfsComSaldo = snap.docs.map(docToObj).filter(nf => {
     if (Number(nf.volume_saldo_kg) <= 0.001) return false
+    // Filtra por unidade
     if (unidadeId && (nf.unidade_id || '') !== unidadeId) return false
-    if (codMat && nf.codigo_material !== codMat) return false
-    if (lote) {
-      const loteNF    = String(nf.lote || '').substring(0, 4)
-      const loteSaida = String(lote).substring(0, 4)
+    // Filtra por código do material
+    if (codigoMaterial && nf.codigo_material !== codigoMaterial) return false
+    // Filtra por lote POY (compara os 4 primeiros dígitos)
+    if (lotePoy) {
+      const loteNF   = String(nf.lote || '').substring(0, 4)
+      const loteSaida = String(lotePoy).substring(0, 4)
       if (loteNF !== loteSaida) return false
     }
     return true
   })
 
-  const buildPreview = (nfsComSaldo, volume) => {
-    let restante = volume
-    const preview = []
-    for (const nf of nfsComSaldo) {
-      if (restante <= 0) break
-      const alocar = Math.min(Number(nf.volume_saldo_kg), restante)
-      preview.push({ numero_nf: nf.numero_nf, data_emissao: nf.data_emissao, saldo_atual: nf.volume_saldo_kg, volume_alocado_kg: alocar })
-      restante -= alocar
-    }
-    return { preview, saldoInsuficiente: restante > 0.01, faltando: restante }
+  let restante = volumeAbatido
+  const preview = []
+  for (const nf of nfsComSaldo) {
+    if (restante <= 0) break
+    const alocar = Math.min(Number(nf.volume_saldo_kg), restante)
+    preview.push({ numero_nf: nf.numero_nf, data_emissao: nf.data_emissao, saldo_atual: nf.volume_saldo_kg, volume_alocado_kg: alocar })
+    restante -= alocar
   }
-
-  const resultado = buildPreview(filtrarNFs(codigoMaterial, lotePoy), volumeAbatido)
-
-  // Regra especial 135612: o abatimento (3,5% do volume líquido) é debitado de NFs de materiais companion
-  if (codigoMaterial === MATERIAL_ESPECIAL_135612.codigo) {
-    const volLiq = volumeLiquido != null ? volumeLiquido : volumeAbatido / (1 - MATERIAL_ESPECIAL_135612.percentual_abatimento)
-    // Permite override manual do valor total do abatimento
-    const volumeAbatimento = volumeAbatimentoOverride != null
-      ? volumeAbatimentoOverride
-      : volLiq * MATERIAL_ESPECIAL_135612.percentual_abatimento
-    resultado.previewsCompanion = MATERIAL_ESPECIAL_135612.distribuicao.map(dist => {
-      const volDist = volumeAbatimento * dist.percentual
-      const { preview, saldoInsuficiente, faltando } = buildPreview(filtrarNFs(dist.codigo_material, null), volDist)
-      return { ...dist, volume: volDist, volumeAbatimentoTotal: volumeAbatimento, preview, saldoInsuficiente, faltando }
-    })
-  }
-
-  return resultado
+  return { preview, saldoInsuficiente: restante > 0.01, faltando: restante }
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -367,20 +333,12 @@ export async function criarSaida(payload, usuario) {
   const {
     romaneio_microdata, codigo_material, lote_poy, lote_acabado,
     tipo_saida, volume_liquido_kg, volume_bruto_kg, quantidade,
-    unidade_id = '',
-    volume_abatimento_override = null,  // override manual do valor do abatimento (apenas 135612)
+    unidade_id = ''
   } = payload
 
-  const temAbatimento         = TIPOS_COM_ABATIMENTO.includes(tipo_saida)
-  const isEspecial135612      = codigo_material === MATERIAL_ESPECIAL_135612.codigo
-  const volume_abatido_kg     = calcularVolumeAbatido(volume_liquido_kg, tipo_saida, codigo_material)
-  const percentual_abatimento = temAbatimento ? getPercentualAbatimento(codigo_material) : 0
-  // volume_abatimento_kg: o valor que será distribuído entre os materiais companion
-  const volume_abatimento_kg  = temAbatimento && isEspecial135612
-    ? (volume_abatimento_override != null
-        ? Number(volume_abatimento_override)
-        : volume_liquido_kg * MATERIAL_ESPECIAL_135612.percentual_abatimento)
-    : 0
+  const temAbatimento       = TIPOS_COM_ABATIMENTO.includes(tipo_saida)
+  const volume_abatido_kg   = calcularVolumeAbatido(volume_liquido_kg, tipo_saida)
+  const percentual_abatimento = temAbatimento ? PERCENTUAL_ABATIMENTO : 0
 
   const snap = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
   const nfsComSaldo = snap.docs.map(docToObj).filter(nf => {
@@ -412,49 +370,14 @@ export async function criarSaida(payload, usuario) {
     throw new Error(`Saldo insuficiente. Disponível: ${saldoDisp.toFixed(4)} kg — Solicitado: ${volume_abatido_kg.toFixed(4)} kg.`)
   }
 
-  // ── Regra especial 135612: alocar o abatimento (3,5%) nos materiais companion ──
-  // nfsCompanionDebits: nf_entrada_id → { saldo_original, totalDebit }
-  const nfsCompanionDebits = {}
-  const alocacoesCompanion = []
-
-  if (isEspecial135612 && volume_abatimento_kg > 0) {
-    const snapComp = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
-    const todasNFsComp = snapComp.docs.map(docToObj)
-
-    for (const dist of MATERIAL_ESPECIAL_135612.distribuicao) {
-      const volDist = volume_abatimento_kg * dist.percentual
-      const nfsComp = todasNFsComp.filter(nf => {
-        if (Number(nf.volume_saldo_kg) <= 0.001) return false
-        if (unidade_id && (nf.unidade_id || '') !== unidade_id) return false
-        return nf.codigo_material === dist.codigo_material
-      })
-      let restComp = volDist
-      for (const nf of nfsComp) {
-        if (restComp <= 0) break
-        const alocar = Math.min(Number(nf.volume_saldo_kg), restComp)
-        alocacoesCompanion.push({
-          nf_entrada_id: nf.id, numero_nf: nf.numero_nf, data_emissao: nf.data_emissao,
-          volume_alocado_kg: alocar, codigo_material: dist.codigo_material,
-        })
-        if (!nfsCompanionDebits[nf.id]) nfsCompanionDebits[nf.id] = { saldo_original: Number(nf.volume_saldo_kg), totalDebit: 0 }
-        nfsCompanionDebits[nf.id].totalDebit += alocar
-        restComp -= alocar
-      }
-      if (restComp > 0.01) {
-        const saldoDisp = nfsComp.reduce((a, n) => a + Number(n.volume_saldo_kg), 0)
-        throw new Error(`Saldo insuficiente no material ${dist.codigo_material}. Disponível: ${saldoDisp.toFixed(4)} kg — Necessário: ${volDist.toFixed(4)} kg.`)
-      }
-    }
-  }
-
   const now      = Timestamp.now()
   const batch    = writeBatch(db)
   const saidaRef = doc(collection(db, 'saida'))
 
   batch.set(saidaRef, {
     romaneio_microdata,
-    codigo_material,
-    codigo_produto: codigo_material,
+    codigo_material,            // campo padronizado (era codigo_produto)
+    codigo_produto: codigo_material, // mantém retrocompatibilidade
     lote_poy,
     lote_acabado:   lote_acabado || '',
     tipo_saida,
@@ -463,48 +386,27 @@ export async function criarSaida(payload, usuario) {
     quantidade:       quantidade || null,
     volume_abatido_kg,
     percentual_abatimento,
-    volume_abatimento_kg: volume_abatimento_kg || null,   // só 135612
     unidade_id,
     usuario_email: usuario?.email || '',
     criado_em: now,
   })
 
-  // Alocações principais (material 135612 → suas próprias NFs)
   const alocacoesRetorno = []
   for (const aloc of alocacoes) {
     const alocRef  = doc(collection(db, 'alocacao_saida'))
     const alocData = {
       saida_id: saidaRef.id, nf_entrada_id: aloc.nf_entrada_id,
       numero_nf: aloc.numero_nf, data_emissao: aloc.data_emissao,
-      volume_alocado_kg: aloc.volume_alocado_kg, criado_em: now,
+      volume_alocado_kg: aloc.volume_alocado_kg, criado_em: now
     }
     batch.set(alocRef, alocData)
     alocacoesRetorno.push({ id: alocRef.id, ...alocData })
   }
+
   for (const aloc of alocacoes) {
     const nfOrig    = nfsComSaldo.find(n => n.id === aloc.nf_entrada_id)
     const novoSaldo = Number(nfOrig.volume_saldo_kg) - aloc.volume_alocado_kg
-    batch.update(doc(db, 'nf_entrada', aloc.nf_entrada_id), { volume_saldo_kg: Math.max(0, novoSaldo), atualizado_em: now })
-  }
-
-  // Alocações companion (abatimento 3,5% distribuído por material)
-  const alocacoesCompanionRetorno = []
-  for (const aloc of alocacoesCompanion) {
-    const alocRef  = doc(collection(db, 'alocacao_saida'))
-    const alocData = {
-      saida_id: saidaRef.id, nf_entrada_id: aloc.nf_entrada_id,
-      numero_nf: aloc.numero_nf, data_emissao: aloc.data_emissao,
-      volume_alocado_kg: aloc.volume_alocado_kg,
-      codigo_material_companion: aloc.codigo_material,
-      criado_em: now,
-    }
-    batch.set(alocRef, alocData)
-    alocacoesCompanionRetorno.push({ id: alocRef.id, ...alocData })
-  }
-  // Uma única update por NF companion (evita conflito no batch)
-  for (const [nfId, info] of Object.entries(nfsCompanionDebits)) {
-    const novoSaldo = info.saldo_original - info.totalDebit
-    batch.update(doc(db, 'nf_entrada', nfId), { volume_saldo_kg: Math.max(0, novoSaldo), atualizado_em: now })
+    batch.update(doc(db, 'nf_entrada', aloc.nf_entrada_id), { volume_saldo_kg: novoSaldo, atualizado_em: now })
   }
 
   await batch.commit()
@@ -518,13 +420,10 @@ export async function criarSaida(payload, usuario) {
     saida: {
       id: saidaRef.id, romaneio_microdata, codigo_material, lote_poy, lote_acabado,
       tipo_saida, volume_liquido_kg, volume_bruto_kg, quantidade,
-      volume_abatido_kg, percentual_abatimento,
-      volume_abatimento_kg: volume_abatimento_kg || null,
-      unidade_id,
+      volume_abatido_kg, percentual_abatimento, unidade_id,
       criado_em: now.toDate().toISOString()
     },
     alocacoes: alocacoesRetorno,
-    alocacoesCompanion: alocacoesCompanionRetorno,
   }
 }
 
@@ -665,7 +564,7 @@ export function exportarExcel(nfs, saidas) {
 // ROMANEIO PDF (com logo)
 // ─────────────────────────────────────────────────────────────────
 
-function _buildRomaneioPDF(saida, alocacoes, config = {}, alocacoesCompanion = []) {
+function _buildRomaneioPDF(saida, alocacoes, config = {}) {
   const pdoc  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   const W     = 210
   const DARK  = [15, 40, 80]
@@ -690,7 +589,7 @@ function _buildRomaneioPDF(saida, alocacoes, config = {}, alocacoesCompanion = [
 
   pdoc.setTextColor(...WHITE)
   pdoc.setFontSize(16); pdoc.setFont('helvetica', 'bold')
-  pdoc.text('RHODIA FAÇONAGEM', W / 2, 13, { align: 'center' })
+  pdoc.text('CORRADI MAZZER FAÇONAGEM', W / 2, 13, { align: 'center' })
   pdoc.setFontSize(10); pdoc.setFont('helvetica', 'normal')
   pdoc.text('ROMANEIO DE SAÍDA', W / 2, 21, { align: 'center' })
   pdoc.setFontSize(8)
@@ -743,15 +642,11 @@ function _buildRomaneioPDF(saida, alocacoes, config = {}, alocacoesCompanion = [
   }
   y += 14
 
-  const percAbatPDF   = saida.percentual_abatimento || PERCENTUAL_ABATIMENTO
-  const percLblPDF    = `${(percAbatPDF * 100).toFixed(1).replace('.', ',')}%`
-  const isEsp135612PDF = (saida.codigo_material || saida.codigo_produto) === MATERIAL_ESPECIAL_135612.codigo
-
   if (temAbat) {
     pdoc.setFont('helvetica', 'bold'); pdoc.setFontSize(9); pdoc.setTextColor(...DARK)
-    pdoc.text(`Volume a Debitar do Estoque (com abat. ${percLblPDF}):`, col1, y)
+    pdoc.text('Volume a Debitar do Estoque (com abat. 1,5%):', col1, y)
     pdoc.setTextColor(...MED)
-    pdoc.text(fmtKg(saida.volume_abatido_kg), col1 + 96, y)
+    pdoc.text(fmtKg(saida.volume_abatido_kg), col1 + 88, y)
     y += 12
   } else {
     pdoc.setFont('helvetica', 'bold'); pdoc.setFontSize(9); pdoc.setTextColor(...DARK)
@@ -763,7 +658,7 @@ function _buildRomaneioPDF(saida, alocacoes, config = {}, alocacoesCompanion = [
 
   y += 6
 
-  // ── Tabela FIFO principal ──────────────────────────────
+  // ── Tabela FIFO ────────────────────────────────────────
   pdoc.setFillColor(...DARK); pdoc.setTextColor(...WHITE)
   pdoc.setFontSize(10); pdoc.setFont('helvetica', 'bold')
   pdoc.roundedRect(14, y, W - 28, 9, 2, 2, 'F')
@@ -790,61 +685,6 @@ function _buildRomaneioPDF(saida, alocacoes, config = {}, alocacoesCompanion = [
     columnStyles:       { 2: { halign: 'right' } },
   })
 
-  // ── Tabela companion — apenas material 135612 ──────────
-  if (isEsp135612PDF && alocacoesCompanion.length > 0) {
-    y = pdoc.lastAutoTable.finalY + 8
-
-    const AMBER = [180, 100, 0]
-    pdoc.setFillColor(...AMBER); pdoc.setTextColor(...WHITE)
-    pdoc.setFontSize(9); pdoc.setFont('helvetica', 'bold')
-    pdoc.roundedRect(14, y, W - 28, 9, 2, 2, 'F')
-    const volAbatTotal = saida.volume_abatimento_kg
-      ? fmtKg(saida.volume_abatimento_kg)
-      : fmtKg(alocacoesCompanion.reduce((s, a) => s + Number(a.volume_alocado_kg), 0))
-    pdoc.text(`ABATIMENTO ÓLEO DE ENCIMAGEM ESPECIAL (${percLblPDF}) — ${volAbatTotal}`, W / 2, y + 6, { align: 'center' })
-    y += 11
-
-    // Agrupa por material companion
-    const porMaterial = {}
-    for (const aloc of alocacoesCompanion) {
-      const cod = aloc.codigo_material_companion || aloc.codigo_material || '?'
-      if (!porMaterial[cod]) porMaterial[cod] = []
-      porMaterial[cod].push(aloc)
-    }
-    const dist = MATERIAL_ESPECIAL_135612.distribuicao
-
-    const bodyComp = []
-    const footTotalComp = { vol: 0 }
-    for (const d of dist) {
-      const alocs = porMaterial[d.codigo_material] || []
-      for (const aloc of alocs) {
-        bodyComp.push([
-          `${d.codigo_material} (${(d.percentual * 100).toFixed(0)}%)`,
-          aloc.numero_nf,
-          aloc.data_emissao ? format(new Date(aloc.data_emissao), 'dd/MM/yyyy') : '—',
-          fmtKg(aloc.volume_alocado_kg),
-        ])
-        footTotalComp.vol += Number(aloc.volume_alocado_kg)
-      }
-    }
-
-    autoTable(pdoc, {
-      startY: y,
-      margin: { left: 14, right: 14 },
-      head: [['Material', 'NF de Entrada', 'Data de Emissão', 'Volume Debitado (kg)']],
-      body: bodyComp,
-      foot: [[
-        { content: 'TOTAL', colSpan: 3, styles: { fontStyle: 'bold' } },
-        { content: fmtKg(footTotalComp.vol), styles: { fontStyle: 'bold' } },
-      ]],
-      headStyles:         { fillColor: [180, 100, 0], textColor: WHITE, fontStyle: 'bold', fontSize: 8 },
-      bodyStyles:         { textColor: [30, 30, 60], fontSize: 8 },
-      footStyles:         { fillColor: [255, 240, 200], textColor: DARK, fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: [255, 248, 230] },
-      columnStyles:       { 3: { halign: 'right' } },
-    })
-  }
-
   // ── Assinatura ─────────────────────────────────────────
   const signY = pdoc.lastAutoTable.finalY + 14
   pdoc.setDrawColor(...MED); pdoc.setLineWidth(0.3)
@@ -859,19 +699,19 @@ function _buildRomaneioPDF(saida, alocacoes, config = {}, alocacoesCompanion = [
   pdoc.setFillColor(...DARK)
   pdoc.rect(0, pH - 12, W, 12, 'F')
   pdoc.setTextColor(...WHITE); pdoc.setFontSize(7); pdoc.setFont('helvetica', 'normal')
-  pdoc.text('Rhodia — Sistema de Controle de Façonagem', W / 2, pH - 4, { align: 'center' })
+  pdoc.text('Corradi Mazzer — Controle de Façonagem', W / 2, pH - 4, { align: 'center' })
 
   return pdoc
 }
 
-export function gerarRomaneioPDF(saida, alocacoes, config = {}, alocacoesCompanion = []) {
-  const pdoc = _buildRomaneioPDF(saida, alocacoes, config, alocacoesCompanion)
+export function gerarRomaneioPDF(saida, alocacoes, config = {}) {
+  const pdoc = _buildRomaneioPDF(saida, alocacoes, config)
   pdoc.save(`romaneio_${saida.romaneio_microdata}_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`)
 }
 
-export function gerarRomaneioBase64(saida, alocacoes, config = {}, alocacoesCompanion = []) {
-  const pdoc = _buildRomaneioPDF(saida, alocacoes, config, alocacoesCompanion)
-  return pdoc.output('datauristring').split(',')[1]
+export function gerarRomaneioBase64(saida, alocacoes, config = {}) {
+  const pdoc = _buildRomaneioPDF(saida, alocacoes, config)
+  return pdoc.output('datauristring').split(',')[1] // retorna base64 puro
 }
 
 
@@ -939,7 +779,7 @@ export function gerarRelatorioPDF(nfs, saidas, mes, ano, config = {}) {
   pdoc.setFillColor(...DARK); pdoc.rect(0, 0, W, 32, 'F')
   pdoc.setTextColor(...WHITE)
   pdoc.setFontSize(16); pdoc.setFont('helvetica', 'bold')
-  pdoc.text('RHODIA FAÇONAGEM', W/2, 12, { align: 'center' })
+  pdoc.text('CORRADI MAZZER FAÇONAGEM', W/2, 12, { align: 'center' })
   pdoc.setFontSize(10); pdoc.setFont('helvetica', 'normal')
   pdoc.text(`RELATÓRIO MENSAL — ${mesLabel.toUpperCase()}`, W/2, 21, { align: 'center' })
   pdoc.setFontSize(8)
@@ -1117,7 +957,7 @@ export function gerarRelatorioPDF(nfs, saidas, mes, ano, config = {}) {
     pdoc.setFillColor(...DARK)
     pdoc.rect(0, pH-10, W, 10, 'F')
     pdoc.setTextColor(...WHITE); pdoc.setFontSize(7); pdoc.setFont('helvetica', 'normal')
-    pdoc.text(`Rhodia — Controle de Façonagem  |  Pág. ${p}/${totalPages}`, W/2, pH-3, { align: 'center' })
+    pdoc.text(`Corradi Mazzer — Controle de Façonagem  |  Pág. ${p}/${totalPages}`, W/2, pH-3, { align: 'center' })
   }
 
   pdoc.save(`relatorio_${ano}${mes ? '_' + String(mes).padStart(2,'0') : ''}.pdf`)
@@ -1169,7 +1009,7 @@ export function gerarInventarioPDF(linhas, unidadeId, dataStr) {
   pdoc.setFillColor(...DARK); pdoc.rect(0, 0, W, 28, 'F')
   pdoc.setTextColor(...WHITE)
   pdoc.setFontSize(14); pdoc.setFont('helvetica', 'bold')
-  pdoc.text('RHODIA FAÇONAGEM — INVENTÁRIO FÍSICO', W/2, 11, { align: 'center' })
+  pdoc.text('CORRADI MAZZER FAÇONAGEM — INVENTÁRIO FÍSICO', W/2, 11, { align: 'center' })
   pdoc.setFontSize(9); pdoc.setFont('helvetica', 'normal')
   pdoc.text(`Data: ${dataStr}  |  Unidade: ${unidadeId || 'Todas'}  |  Emitido em: ${format(new Date(), "dd/MM/yyyy 'às' HH:mm", {locale:ptBR})}`, W/2, 20, { align: 'center' })
 
@@ -1224,7 +1064,7 @@ export function gerarInventarioPDF(linhas, unidadeId, dataStr) {
   const pH = pdoc.internal.pageSize.height
   pdoc.setFillColor(...DARK); pdoc.rect(0, pH-10, W, 10, 'F')
   pdoc.setTextColor(...WHITE); pdoc.setFontSize(7)
-  pdoc.text('Rhodia — Controle de Façonagem', W/2, pH-3, { align: 'center' })
+  pdoc.text('Corradi Mazzer — Controle de Façonagem', W/2, pH-3, { align: 'center' })
 
   pdoc.save(`inventario_${format(new Date(), 'yyyy-MM-dd')}.pdf`)
 }
@@ -1245,7 +1085,7 @@ function pdfHeader(pdoc, titulo, subtitulo) {
   pdoc.setFillColor(...DARK_R); pdoc.rect(0,0,W,28,'F')
   pdoc.setTextColor(...WHITE_R)
   pdoc.setFontSize(13); pdoc.setFont('helvetica','bold')
-  pdoc.text('RHODIA FAÇONAGEM', W/2, 10, {align:'center'})
+  pdoc.text('CORRADI MAZZER FAÇONAGEM', W/2, 10, {align:'center'})
   pdoc.setFontSize(9); pdoc.setFont('helvetica','normal')
   pdoc.text(titulo.toUpperCase(), W/2, 18, {align:'center'})
   if (subtitulo) { pdoc.setFontSize(7); pdoc.text(subtitulo, W/2, 24, {align:'center'}) }
@@ -1259,7 +1099,7 @@ function pdfFooter(pdoc) {
     const H = pdoc.internal.pageSize.height
     pdoc.setFillColor(...DARK_R); pdoc.rect(0,H-10,W,10,'F')
     pdoc.setTextColor(...WHITE_R); pdoc.setFontSize(7); pdoc.setFont('helvetica','normal')
-    pdoc.text(`Rhodia — Controle de Façonagem  |  Pág. ${p}/${total}`, W/2, H-3, {align:'center'})
+    pdoc.text(`Corradi Mazzer — Controle de Façonagem  |  Pág. ${p}/${total}`, W/2, H-3, {align:'center'})
   }
 }
 
