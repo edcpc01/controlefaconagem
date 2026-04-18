@@ -14,7 +14,7 @@ function Toast({ toasts }) {
   return <div className="toast-container">{toasts.map(t => <div key={t.id} className={`toast ${t.type}`}>{t.msg}</div>)}</div>
 }
 
-const EMPTY_FORM = { data_emissao: '', numero_nf: '', codigo_material: '', lote: '', volume_kg: '', valor_unitario: '' }
+const EMPTY_FORM = { data_emissao: '', numero_nf: '', codigo_material: '', descricao_material: '', lote: '', volume_kg: '', valor_unitario: '' }
 const fmt         = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtCurrency = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 6 })
 
@@ -60,8 +60,12 @@ function NFForm({ form, set, onSubmit, onCancel, loading, extracting, onPDFUploa
           <input type="text" className="form-input" placeholder="Ex: 140911" value={form.codigo_material} onChange={e => set('codigo_material', e.target.value)} />
         </div>
         <div className="form-group">
-          <label className="form-label">Lote POY *</label>
-          <input type="text" className="form-input" placeholder="Ex: 5327" value={form.lote} onChange={e => set('lote', e.target.value)} />
+          <label className="form-label">Descrição do Material</label>
+          <input type="text" className="form-input" placeholder="Ex: POY, Tubete..." value={form.descricao_material} onChange={e => set('descricao_material', e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Lote POY</label>
+          <input type="text" className="form-input" placeholder="Ex: 37553" value={form.lote} onChange={e => set('lote', e.target.value)} />
         </div>
         <div className="form-group">
           <label className="form-label">Volume (kg) *</label>
@@ -105,7 +109,7 @@ function PainelMultiItem({ itens, onSalvar, onCancelar, loading, initialNF, init
   const setLinha = (id, campo, valor) =>
     setLinhas(ls => ls.map(l => l._id === id ? {...l, [campo]: valor} : l))
   const addLinha = () =>
-    setLinhas(ls => [...ls, { _id: nextId.current++, incluir:true, codigo_material:'', lote:'', volume_kg:'', valor_unitario:'' }])
+    setLinhas(ls => [...ls, { _id: nextId.current++, incluir:true, codigo_material:'', descricao_material:'', lote:'', volume_kg:'', valor_unitario:'' }])
   const removeLinha = (id) => setLinhas(ls => ls.filter(l => l._id !== id))
 
   const totalVol = linhas.filter(l=>l.incluir).reduce((a,l) => a + (parseFloat(l.volume_kg)||0), 0)
@@ -160,6 +164,7 @@ function PainelMultiItem({ itens, onSalvar, onCancelar, loading, initialNF, init
                   onChange={e => setLinhas(ls => ls.map(l => ({...l, incluir: e.target.checked})))} />
               </th>
               <th style={{padding:'8px 10px', textAlign:'left', color:'var(--text-dim)', fontWeight:600}}>Cód. Material *</th>
+              <th style={{padding:'8px 10px', textAlign:'left', color:'var(--text-dim)', fontWeight:600}}>Descrição</th>
               <th style={{padding:'8px 10px', textAlign:'left', color:'var(--text-dim)', fontWeight:600}}>Lote POY</th>
               <th style={{padding:'8px 10px', textAlign:'right', color:'var(--text-dim)', fontWeight:600}}>Volume (kg) *</th>
               <th style={{padding:'8px 10px', textAlign:'right', color:'var(--text-dim)', fontWeight:600}}>Valor Unit. (R$) *</th>
@@ -179,8 +184,13 @@ function PainelMultiItem({ itens, onSalvar, onCancelar, loading, initialNF, init
                     value={l.codigo_material} onChange={e => setLinha(l._id,'codigo_material',e.target.value)} />
                 </td>
                 <td style={{padding:'6px 10px'}}>
+                  <input className="form-input" style={{width:150}}
+                    placeholder="Descrição"
+                    value={l.descricao_material} onChange={e => setLinha(l._id,'descricao_material',e.target.value)} />
+                </td>
+                <td style={{padding:'6px 10px'}}>
                   <input className="form-input" style={{width:90, fontFamily:'monospace'}}
-                    placeholder="Ex: 5327" value={l.lote}
+                    placeholder="Ex: 37553" value={l.lote}
                     onChange={e => setLinha(l._id,'lote',e.target.value)} />
                 </td>
                 <td style={{padding:'6px 10px'}}>
@@ -210,7 +220,7 @@ function PainelMultiItem({ itens, onSalvar, onCancelar, loading, initialNF, init
           </tbody>
           <tfoot>
             <tr style={{borderTop:'2px solid var(--border)', background:'rgba(255,255,255,0.03)'}}>
-              <td colSpan={3} style={{padding:'8px 10px'}}>
+              <td colSpan={4} style={{padding:'8px 10px'}}>
                 <button className="btn btn-ghost btn-sm" onClick={addLinha} style={{fontSize:12}}>
                   + Adicionar material
                 </button>
@@ -278,7 +288,7 @@ export default function EntradaPage() {
         r.onerror = () => rej(new Error('Erro ao ler arquivo'))
         r.readAsDataURL(file)
       })
-      const dados = await extrairDadosNFdoPDF(base64)
+      const dados = await extrairDadosNFdoPDF(base64, operacaoAtiva)
 
       if (dados.itens && dados.itens.length > 1) {
         // Multi-item: abre painel de revisão
@@ -291,6 +301,7 @@ export default function EntradaPage() {
           data_emissao:    dados.data_emissao   || '',
           numero_nf:       dados.numero_nf      || '',
           codigo_material: item.codigo_material  || '',
+          descricao_material: item.descricao_material || '',
           lote:            item.lote            || '',
           volume_kg:       item.volume_kg       != null ? String(item.volume_kg) : '',
           valor_unitario:  item.valor_unitario  != null ? String(item.valor_unitario) : '',
@@ -310,8 +321,8 @@ export default function EntradaPage() {
 
   // ── Criar NF (único item) ────────────────────────────────────────
   const handleSubmit = async () => {
-    if (!form.data_emissao || !form.numero_nf || !form.codigo_material || !form.lote || !form.volume_kg || !form.valor_unitario) {
-      toast('Preencha todos os campos obrigatórios.', 'error'); return
+    if (!form.data_emissao || !form.numero_nf || !form.codigo_material || !form.volume_kg || !form.valor_unitario) {
+      toast('Preencha todos os campos obrigatórios (Lote e Descrição opcionais).', 'error'); return
     }
     setLoading(true)
     try {
@@ -321,7 +332,8 @@ export default function EntradaPage() {
         data_emissao:    form.data_emissao,
         numero_nf:       form.numero_nf.trim(),
         codigo_material: form.codigo_material.trim(),
-        lote:            form.lote.trim(),
+        descricao_material: form.descricao_material?.trim() || '',
+        lote:            form.lote?.trim() || '',
         volume_kg:       parseFloat(form.volume_kg),
         valor_unitario:  parseFloat(form.valor_unitario),
         unidade_id:      unidadeAtiva || '',
@@ -344,7 +356,8 @@ export default function EntradaPage() {
         data_emissao:    nfData,
         numero_nf:       nfNum,
         codigo_material: l.codigo_material.trim(),
-        lote:            l.lote.trim(),
+        descricao_material: l.descricao_material?.trim() || '',
+        lote:            l.lote?.trim() || '',
         volume_kg:       parseFloat(l.volume_kg),
         valor_unitario:  parseFloat(l.valor_unitario),
         unidade_id:      unidadeAtiva || '',
@@ -367,6 +380,7 @@ export default function EntradaPage() {
       data_emissao:    nf.data_emissao || '',
       numero_nf:       nf.numero_nf || '',
       codigo_material: nf.codigo_material || '',
+      descricao_material: nf.descricao_material || '',
       lote:            nf.lote || '',
       volume_kg:       String(nf.volume_kg || ''),
       valor_unitario:  String(nf.valor_unitario || ''),
@@ -374,8 +388,8 @@ export default function EntradaPage() {
   }
 
   const handleEditar = async () => {
-    if (!editForm.data_emissao || !editForm.numero_nf || !editForm.codigo_material || !editForm.lote || !editForm.volume_kg || !editForm.valor_unitario) {
-      toast('Preencha todos os campos.', 'error'); return
+    if (!editForm.data_emissao || !editForm.numero_nf || !editForm.codigo_material || !editForm.volume_kg || !editForm.valor_unitario) {
+      toast('Preencha os campos obrigatórios.', 'error'); return
     }
     setEditLoading(true)
     try {
@@ -383,7 +397,8 @@ export default function EntradaPage() {
         data_emissao:    editForm.data_emissao,
         numero_nf:       editForm.numero_nf.trim(),
         codigo_material: editForm.codigo_material.trim(),
-        lote:            editForm.lote.trim(),
+        descricao_material: editForm.descricao_material?.trim() || '',
+        lote:            editForm.lote?.trim() || '',
         volume_kg:       parseFloat(editForm.volume_kg),
         valor_unitario:  parseFloat(editForm.valor_unitario),
         unidade_id:      editando.unidade_id || unidadeAtiva || '',
@@ -474,7 +489,7 @@ export default function EntradaPage() {
               onClick={() => setMultiItens({
                 numero_nf: form.numero_nf || '',
                 data_emissao: form.data_emissao || '',
-                itens: [{ codigo_material:'', lote:'', volume_kg:'', valor_unitario:'' }]
+                itens: [{ codigo_material:'', descricao_material:'', lote:'', volume_kg:'', valor_unitario:'' }]
               })}
             >
               📋 Múltiplos materiais
@@ -528,8 +543,11 @@ export default function EntradaPage() {
                         {statusV==='alerta'  && <span title={`Vence em ${dias} dias`} style={{marginLeft:5,cursor:'help'}}>⚠️</span>}
                       </td>
                       <td>{format(new Date(nf.data_emissao),'dd/MM/yy')}</td>
-                      <td className="col-hide-mobile">{nf.codigo_material}</td>
-                      <td>{nf.lote}</td>
+                      <td className="col-hide-mobile">
+                        {nf.codigo_material}
+                        {nf.descricao_material && <div style={{fontSize: 10, color: 'var(--text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 120}} title={nf.descricao_material}>{nf.descricao_material}</div>}
+                      </td>
+                      <td>{nf.lote || '—'}</td>
                       <td className="td-right td-mono col-hide-mobile">{fmt(nf.volume_kg)}</td>
                       <td className="td-right td-mono" style={{color:Number(nf.volume_saldo_kg)<=0.01?'var(--danger)':'var(--accent-2)',fontWeight:600}}>
                         {fmt(nf.volume_saldo_kg)}

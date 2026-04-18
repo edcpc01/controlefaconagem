@@ -167,6 +167,7 @@ export async function criarNFEntrada(payload, usuario, colecoes = COLECOES_PADRA
     numero_nf:       payload.numero_nf,
     data_emissao:    Timestamp.fromDate(new Date(payload.data_emissao + 'T12:00:00')),
     codigo_material: payload.codigo_material,
+    descricao_material: payload.descricao_material || '',
     lote:            payload.lote,
     volume_kg:       payload.volume_kg,
     volume_saldo_kg: payload.volume_kg,
@@ -190,12 +191,12 @@ export async function editarNFEntrada(id, payload, usuario, colecoes = COLECOES_
 
   const dadosAntes = {
     numero_nf: atual.numero_nf, data_emissao: tsToISO(atual.data_emissao),
-    codigo_material: atual.codigo_material, lote: atual.lote,
+    codigo_material: atual.codigo_material, descricao_material: atual.descricao_material || '', lote: atual.lote,
     volume_kg: atual.volume_kg, valor_unitario: atual.valor_unitario,
   }
   const dadosDepois = {
     numero_nf: payload.numero_nf, data_emissao: payload.data_emissao,
-    codigo_material: payload.codigo_material, lote: payload.lote,
+    codigo_material: payload.codigo_material, descricao_material: payload.descricao_material || '', lote: payload.lote,
     volume_kg: payload.volume_kg, valor_unitario: payload.valor_unitario,
   }
 
@@ -203,6 +204,7 @@ export async function editarNFEntrada(id, payload, usuario, colecoes = COLECOES_
     numero_nf:       payload.numero_nf,
     data_emissao:    Timestamp.fromDate(new Date(payload.data_emissao + 'T12:00:00')),
     codigo_material: payload.codigo_material,
+    descricao_material: payload.descricao_material || '',
     lote:            payload.lote,
     volume_kg:       payload.volume_kg,
     volume_saldo_kg: novoSaldo,
@@ -277,13 +279,13 @@ async function extrairTextoPDF(base64Data) {
 }
 
 // Envia texto ao proxy Vercel → OpenRouter — agora retorna { numero_nf, data_emissao, itens: [...] }
-export async function extrairDadosNFdoPDF(base64Data) {
+export async function extrairDadosNFdoPDF(base64Data, operacaoAtiva) {
   const pdfText = await extrairTextoPDF(base64Data)
 
   const response = await fetch('/api/extract-nf', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pdfText })
+    body: JSON.stringify({ pdfText, operacao: operacaoAtiva })
   })
   if (!response.ok) {
     const err = await response.json().catch(() => ({}))
@@ -295,14 +297,16 @@ export async function extrairDadosNFdoPDF(base64Data) {
   if (!dados.itens) {
     dados.itens = [{
       codigo_material: dados.codigo_material || '',
-      lote: dados.lote ? String(dados.lote).replace(/\D/g,'').substring(0,4) : '',
+      descricao_material: dados.descricao_material || dados.descricao || '',
+      lote: dados.lote ? String(dados.lote).replace(/\D/g,'').substring(0,5) : '',
       volume_kg: dados.volume_kg || 0,
       valor_unitario: dados.valor_unitario || 0,
     }]
   }
   dados.itens = dados.itens.map(item => ({
     ...item,
-    lote: item.lote ? String(item.lote).replace(/\D/g,'').substring(0,4) : '',
+    descricao_material: item.descricao_material || item.descricao || '',
+    lote: item.lote ? String(item.lote).replace(/\D/g,'').substring(0,5) : '',
   }))
 
   return dados

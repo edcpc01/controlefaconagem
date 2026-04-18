@@ -124,6 +124,7 @@ export default function NFDetailPage() {
           {[
             ['Emissão',        fmtD(nf.data_emissao)],
             ['Cód. Material',  nf.codigo_material || '—'],
+            ['Descrição',      nf.descricao_material || '—'],
             ['Lote POY',       nf.lote || '—'],
             ['Unidade',        nf.unidade_id || '—'],
             ['Valor Unitário', 'R$ ' + Number(nf.valor_unitario||0).toFixed(6).replace('.',',')],
