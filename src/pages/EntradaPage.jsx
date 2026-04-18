@@ -310,8 +310,8 @@ export default function EntradaPage() {
       }
     } catch (e) {
       const msg = e.message?.includes('OPENROUTER_API_KEY') || e.message?.includes('ANTHROPIC_API_KEY')
-        ? '⚠ Chave da API não configurada na Vercel. Preencha manualmente.'
-        : 'Erro ao extrair dados do PDF. Preencha manualmente.'
+        ? '⚠ Chave da API não configurada na Vercel.'
+        : `Erro na extração: ${e.message}`
       toast(msg, 'error')
     } finally {
       setExtracting(false)
