@@ -7,9 +7,10 @@ function Toast({ toasts }) {
 }
 
 function RoleBadge({ role }) {
-  if (role === 'admin')      return <span className="badge badge-blue">Admin</span>
-  if (role === 'supervisor') return <span className="badge badge-warn">Supervisor</span>
-  return <span className="badge badge-green">Analista</span>
+  if (role === 'admin')             return <span className="badge badge-blue">Admin</span>
+  if (role === 'supervisor_rhodia') return <span className="badge badge-warn">Sup. Rhodia</span>
+  if (role === 'supervisor_nilit')  return <span className="badge badge-green">Sup. Nilit</span>
+  return <span className="badge" style={{background:'rgba(180,180,180,0.15)',color:'var(--text-dim)'}}>Analista</span>
 }
 
 export default function UsersPage() {
@@ -87,7 +88,7 @@ export default function UsersPage() {
       {/* Regras resumidas */}
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-title">Níveis de Acesso</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           <div style={{ padding: '14px 16px', background: 'rgba(34,85,184,0.12)', borderRadius: 8, border: '1px solid rgba(34,85,184,0.25)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <RoleBadge role="admin" />
@@ -95,31 +96,41 @@ export default function UsersPage() {
             </div>
             <ul style={{ margin: 0, padding: '0 0 0 16px', color: 'var(--text-dim)', fontSize: 13, lineHeight: 1.8 }}>
               <li>Acesso total ao sistema</li>
-              <li>Visualiza todas as unidades</li>
+              <li>Visualiza todas as operações e unidades</li>
               <li>Gerencia usuários e permissões</li>
             </ul>
           </div>
           <div style={{ padding: '14px 16px', background: 'rgba(255,180,0,0.08)', borderRadius: 8, border: '1px solid rgba(255,180,0,0.25)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <RoleBadge role="supervisor" />
-              <span style={{ fontWeight: 700, fontSize: 14 }}>Supervisor</span>
+              <RoleBadge role="supervisor_rhodia" />
+              <span style={{ fontWeight: 700, fontSize: 14 }}>Supervisor Rhodia</span>
             </div>
             <ul style={{ margin: 0, padding: '0 0 0 16px', color: 'var(--text-dim)', fontSize: 13, lineHeight: 1.8 }}>
-              <li>Visualização geral do sistema</li>
+              <li>Visualização da operação Rhodia</li>
               <li>Acesso a Dashboard, KPIs, Inventário</li>
-              <li>Sem registro de entradas e saídas</li>
-              <li>Sem acesso a usuários</li>
+              <li>Sem registro de entradas/saídas</li>
             </ul>
           </div>
-          <div style={{ padding: '14px 16px', background: 'rgba(0,195,100,0.08)', borderRadius: 8, border: '1px solid rgba(0,195,100,0.2)' }}>
+          <div style={{ padding: '14px 16px', background: 'rgba(14,124,107,0.10)', borderRadius: 8, border: '1px solid rgba(14,124,107,0.25)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <RoleBadge role="supervisor_nilit" />
+              <span style={{ fontWeight: 700, fontSize: 14 }}>Supervisor Nilit</span>
+            </div>
+            <ul style={{ margin: 0, padding: '0 0 0 16px', color: 'var(--text-dim)', fontSize: 13, lineHeight: 1.8 }}>
+              <li>Visualização da operação Nilit</li>
+              <li>Acesso a Dashboard, KPIs, Inventário</li>
+              <li>Sem registro de entradas/saídas</li>
+            </ul>
+          </div>
+          <div style={{ padding: '14px 16px', background: 'rgba(180,180,180,0.08)', borderRadius: 8, border: '1px solid rgba(180,180,180,0.2)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <RoleBadge role="analista" />
               <span style={{ fontWeight: 700, fontSize: 14 }}>Analista</span>
             </div>
             <ul style={{ margin: 0, padding: '0 0 0 16px', color: 'var(--text-dim)', fontSize: 13, lineHeight: 1.8 }}>
               <li>Acesso às operações do dia a dia</li>
+              <li>Seleciona operação no header</li>
               <li>Vinculado à unidade cadastrada</li>
-              <li>Não pode gerenciar usuários</li>
               <li>Nível padrão para novos cadastros</li>
             </ul>
           </div>
@@ -174,7 +185,8 @@ export default function UsersPage() {
                             onChange={e => handleUpdate(u.id, 'role', e.target.value)}
                           >
                             <option value="admin">Admin</option>
-                            <option value="supervisor">Supervisor</option>
+                            <option value="supervisor_rhodia">Supervisor Rhodia</option>
+                            <option value="supervisor_nilit">Supervisor Nilit</option>
                             <option value="analista">Analista</option>
                           </select>
                         )}
@@ -182,9 +194,9 @@ export default function UsersPage() {
 
                       {/* Unidade — não se aplica a admin nem supervisor */}
                       <td>
-                        {(u.role === 'admin' || u.role === 'supervisor') ? (
+                        {(u.role === 'admin' || u.role === 'supervisor_rhodia' || u.role === 'supervisor_nilit') ? (
                           <span style={{ fontSize: 12, color: 'var(--text-dim)', fontStyle: 'italic' }}>
-                            {u.role === 'admin' ? 'Todas' : '—'}
+                            {u.role === 'admin' ? 'Todas' : u.role === 'supervisor_rhodia' ? 'Rhodia' : 'Nilit'}
                           </span>
                         ) : (
                           <select
@@ -206,7 +218,7 @@ export default function UsersPage() {
                       <td>
                         {salvandoEu ? (
                           <span style={{ fontSize: 11, color: 'var(--accent)' }}>Salvando...</span>
-                        ) : u.role === 'admin' || u.role === 'supervisor' || u.unidade_id ? (
+                        ) : u.role === 'admin' || u.role === 'supervisor_rhodia' || u.role === 'supervisor_nilit' || u.unidade_id ? (
                           <span className="badge badge-green" style={{ fontSize: 10 }}>✓ OK</span>
                         ) : (
                           <span className="badge badge-warn" style={{ fontSize: 10 }}>⚠ Sem unidade</span>

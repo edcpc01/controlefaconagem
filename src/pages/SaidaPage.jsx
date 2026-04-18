@@ -7,6 +7,7 @@ import {
 } from '../lib/faconagem'
 import { useAuth } from '../lib/AuthContext'
 import { useUser } from '../lib/UserContext'
+import { useOperacao } from '../lib/OperacaoContext'
 import { format } from 'date-fns'
 
 // ── Fila offline (localStorage) ──────────────────────────────────
@@ -320,6 +321,7 @@ function SucessoModal({ ultimaSaida, onClose, onPDF }) {
 export default function SaidaPage() {
   const { user } = useAuth()
   const { unidadeAtiva, isSupervisor } = useUser() || {}
+  const { colecoes, operacaoAtiva } = useOperacao() || {}
   const [saidas, setSaidas]           = useState([])
   const [nfs, setNfs]                 = useState([])
   const [form, setForm]               = useState(EMPTY_FORM)
@@ -400,7 +402,7 @@ export default function SaidaPage() {
         unidade_id:         unidadeAtiva || '',
       }
       try {
-        const res = await criarSaida(payload, user)
+        const res = await criarSaida(payload, user, colecoes)
         resultados.push({ romaneio: linha.romaneio, nf: linha.nf.numero_nf, volLiq, res })
       } catch (e) {
         erros.push({ romaneio: linha.romaneio, erro: e.message })
@@ -438,13 +440,13 @@ export default function SaidaPage() {
 
   const load = () => {
     setLoadingList(true)
-    Promise.all([listarSaidas(unidadeAtiva || ''), listarNFsEntrada(unidadeAtiva || '')])
+    Promise.all([listarSaidas(unidadeAtiva || '', colecoes), listarNFsEntrada(unidadeAtiva || '', colecoes)])
       .then(([s, n]) => { setSaidas(s); setNfs(n) })
       .catch(e => toast(e.message, 'error'))
       .finally(() => setLoadingList(false))
   }
 
-  useEffect(() => { load(); carregarConfig().then(setConfig) }, [unidadeAtiva])
+  useEffect(() => { load(); carregarConfig(colecoes).then(setConfig) }, [unidadeAtiva, operacaoAtiva])
 
   // Monitor online/offline
   useEffect(() => {
@@ -467,7 +469,7 @@ export default function SaidaPage() {
     let ok = 0, erros = 0
     for (const item of fila) {
       try {
-        await criarSaida(item.payload, item.usuario)
+        await criarSaida(item.payload, item.usuario, colecoes)
         removeFromQueue(item._id)
         ok++
       } catch { erros++ }
@@ -533,6 +535,7 @@ export default function SaidaPage() {
       unidadeId:                unidadeAtiva || '',
       volumeLiquido:            volumeLiq,
       volumeAbatimentoOverride: isEspecial135612 ? volumeAbatimento : null,
+      colecoes,
     })
     setConfirmacao({ preview, previewsCompanion })
   }
@@ -563,7 +566,7 @@ export default function SaidaPage() {
 
     setLoading(true)
     try {
-      const resultado = await criarSaida(payload, user)
+      const resultado = await criarSaida(payload, user, colecoes)
       setConfirmacao(null)
       setUltimaSaida(resultado)
       setForm(EMPTY_FORM)
@@ -662,7 +665,7 @@ export default function SaidaPage() {
 
   const handleDeletarSaida = async (saida) => {
     try {
-      await deletarSaida(saida.id, user)
+      await deletarSaida(saida.id, user, colecoes)
       toast(`Romaneio ${saida.romaneio_microdata} excluído — saldo estornado nas NFs.`)
       setConfirmDeleteSaida(null)
       load()
@@ -675,7 +678,7 @@ export default function SaidaPage() {
   const handleDeletar = async (saida) => {
     if (!window.confirm(`Excluir romaneio ${saida.romaneio_microdata}? O saldo será restaurado nas NFs.`)) return
     try {
-      await deletarSaida(saida.id, user)
+      await deletarSaida(saida.id, user, colecoes)
       toast('Saída excluída e saldo restaurado.')
       load()
     } catch (e) {

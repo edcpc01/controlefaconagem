@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { listarNFsEntrada, listarSaidas, TIPOS_SAIDA, statusVencimentoNF, diasParaVencimento } from '../lib/faconagem'
 import { useUser } from '../lib/UserContext'
+import { useOperacao } from '../lib/OperacaoContext'
 import { format } from 'date-fns'
 
 const fmt  = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -135,6 +136,7 @@ export default function DashboardPage() {
   const navigate = useNavigate()
   const { unidadeAtiva } = useUser() || {}
   const ctx = useUser()
+  const { colecoes, operacaoAtiva } = useOperacao() || {}
   const isAdmin = ctx?.isAdmin ?? false
   const [nfs,     setNfs]     = useState([])
   const [saidas,  setSaidas]  = useState([])
@@ -147,11 +149,11 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setLoading(true)
-    Promise.all([listarNFsEntrada(unidadeAtiva || ''), listarSaidas(unidadeAtiva || '')])
+    Promise.all([listarNFsEntrada(unidadeAtiva || '', colecoes), listarSaidas(unidadeAtiva || '', colecoes)])
       .then(([n,s]) => { setNfs(n); setSaidas(s) })
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [unidadeAtiva])
+  }, [unidadeAtiva, operacaoAtiva])
 
   const totalEntrada = nfs.reduce((a,n) => a + Number(n.volume_kg), 0)
   const totalSaldo   = nfs.reduce((a,n) => a + Number(n.volume_saldo_kg), 0)

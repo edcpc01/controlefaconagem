@@ -9,6 +9,17 @@ import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import * as XLSX from 'xlsx'
 
+// Coleções padrão (Rhodia) — usado como fallback
+export const COLECOES_PADRAO = {
+  nf_entrada:     'nf_entrada',
+  saida:          'saida',
+  alocacao_saida: 'alocacao_saida',
+  log_acoes:      'log_acoes',
+  inventario:     'inventario',
+  nf_historico:   'nf_historico',
+  config:         'config',
+}
+
 // ─────────────────────────────────────────────────────────────────
 // CONSTANTES
 // ─────────────────────────────────────────────────────────────────
@@ -109,9 +120,9 @@ function docToObj(snap) {
 // LOG DE AÇÕES
 // ─────────────────────────────────────────────────────────────────
 
-export async function registrarLog(acao, descricao, usuario) {
+export async function registrarLog(acao, descricao, usuario, colecoes = COLECOES_PADRAO) {
   try {
-    await addDoc(collection(db, 'log_acoes'), {
+    await addDoc(collection(db, colecoes.log_acoes), {
       acao, descricao,
       usuario_email: usuario?.email || 'desconhecido',
       usuario_nome:  usuario?.displayName || usuario?.email || 'desconhecido',
@@ -120,8 +131,8 @@ export async function registrarLog(acao, descricao, usuario) {
   } catch (_) {}
 }
 
-export async function listarLogs() {
-  const snap = await getDocs(query(collection(db, 'log_acoes'), orderBy('criado_em', 'desc')))
+export async function listarLogs(colecoes = COLECOES_PADRAO) {
+  const snap = await getDocs(query(collection(db, colecoes.log_acoes), orderBy('criado_em', 'desc')))
   return snap.docs.map(d => ({ id: d.id, ...d.data(), criado_em: tsToDateTime(d.data().criado_em) }))
 }
 
@@ -129,12 +140,12 @@ export async function listarLogs() {
 // CONFIGURAÇÕES
 // ─────────────────────────────────────────────────────────────────
 
-export async function salvarConfig(payload) {
-  await setDoc(doc(db, 'config', 'app'), payload, { merge: true })
+export async function salvarConfig(payload, colecoes = COLECOES_PADRAO) {
+  await setDoc(doc(db, colecoes.config, 'app'), payload, { merge: true })
 }
 
-export async function carregarConfig() {
-  const snap = await getDoc(doc(db, 'config', 'app'))
+export async function carregarConfig(colecoes = COLECOES_PADRAO) {
+  const snap = await getDoc(doc(db, colecoes.config, 'app'))
   return snap.exists() ? snap.data() : {}
 }
 
@@ -142,17 +153,17 @@ export async function carregarConfig() {
 // NF ENTRADA — CRUD + EDIÇÃO
 // ─────────────────────────────────────────────────────────────────
 
-export async function listarNFsEntrada(unidadeId = '') {
-  const snap = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
+export async function listarNFsEntrada(unidadeId = '', colecoes = COLECOES_PADRAO) {
+  const snap = await getDocs(query(collection(db, colecoes.nf_entrada), orderBy('data_emissao', 'asc')))
   const todos = snap.docs.map(docToObj)
   // Filtra por unidade se informada; docs sem unidade_id pertencem à raiz (sem unidade)
   if (!unidadeId) return todos
   return todos.filter(nf => (nf.unidade_id || '') === unidadeId)
 }
 
-export async function criarNFEntrada(payload, usuario) {
+export async function criarNFEntrada(payload, usuario, colecoes = COLECOES_PADRAO) {
   const now = Timestamp.now()
-  const docRef = await addDoc(collection(db, 'nf_entrada'), {
+  const docRef = await addDoc(collection(db, colecoes.nf_entrada), {
     numero_nf:       payload.numero_nf,
     data_emissao:    Timestamp.fromDate(new Date(payload.data_emissao + 'T12:00:00')),
     codigo_material: payload.codigo_material,
@@ -164,14 +175,14 @@ export async function criarNFEntrada(payload, usuario) {
     criado_em:       now,
     atualizado_em:   now,
   })
-  await registrarLog('NF_ENTRADA_CRIADA', `NF ${payload.numero_nf} — ${payload.volume_kg} kg`, usuario)
+  await registrarLog('NF_ENTRADA_CRIADA', `NF ${payload.numero_nf} — ${payload.volume_kg} kg`, usuario, colecoes)
   const snap = await getDoc(docRef)
   return docToObj(snap)
 }
 
-export async function editarNFEntrada(id, payload, usuario) {
+export async function editarNFEntrada(id, payload, usuario, colecoes = COLECOES_PADRAO) {
   const now = Timestamp.now()
-  const snapAtual = await getDoc(doc(db, 'nf_entrada', id))
+  const snapAtual = await getDoc(doc(db, colecoes.nf_entrada, id))
   if (!snapAtual.exists()) throw new Error('NF não encontrada.')
   const atual = snapAtual.data()
   const consumido = Number(atual.volume_kg) - Number(atual.volume_saldo_kg)
@@ -188,7 +199,7 @@ export async function editarNFEntrada(id, payload, usuario) {
     volume_kg: payload.volume_kg, valor_unitario: payload.valor_unitario,
   }
 
-  await updateDoc(doc(db, 'nf_entrada', id), {
+  await updateDoc(doc(db, colecoes.nf_entrada, id), {
     numero_nf:       payload.numero_nf,
     data_emissao:    Timestamp.fromDate(new Date(payload.data_emissao + 'T12:00:00')),
     codigo_material: payload.codigo_material,
@@ -201,31 +212,31 @@ export async function editarNFEntrada(id, payload, usuario) {
   })
 
   // Registra histórico de edição
-  await addDoc(collection(db, 'nf_historico'), {
+  await addDoc(collection(db, colecoes.nf_historico), {
     nf_id: id,
     dados_antes: dadosAntes,
     dados_depois: dadosDepois,
     usuario_email: usuario?.email || '',
     editado_em: now,
   })
-  await registrarLog('NF_ENTRADA_EDITADA', `NF ${payload.numero_nf} atualizada`, usuario)
+  await registrarLog('NF_ENTRADA_EDITADA', `NF ${payload.numero_nf} atualizada`, usuario, colecoes)
 }
 
-export async function deletarNFEntrada(id, numeroNF, usuario) {
-  await deleteDoc(doc(db, 'nf_entrada', id))
-  await registrarLog('NF_ENTRADA_REMOVIDA', `NF ${numeroNF} removida`, usuario)
+export async function deletarNFEntrada(id, numeroNF, usuario, colecoes = COLECOES_PADRAO) {
+  await deleteDoc(doc(db, colecoes.nf_entrada, id))
+  await registrarLog('NF_ENTRADA_REMOVIDA', `NF ${numeroNF} removida`, usuario, colecoes)
 }
 
-export async function buscarAlocacoesPorNF(nfId) {
+export async function buscarAlocacoesPorNF(nfId, colecoes = COLECOES_PADRAO) {
   // Sem orderBy para evitar necessidade de índice composto no Firestore
   const alocSnap = await getDocs(
-    query(collection(db, 'alocacao_saida'), where('nf_entrada_id', '==', nfId))
+    query(collection(db, colecoes.alocacao_saida), where('nf_entrada_id', '==', nfId))
   )
   if (alocSnap.empty) return []
   const saidaIds = [...new Set(alocSnap.docs.map(d => d.data().saida_id))]
   const saidasMap = {}
   await Promise.all(saidaIds.map(async (sid) => {
-    const sSnap = await getDoc(doc(db, 'saida', sid))
+    const sSnap = await getDoc(doc(db, colecoes.saida, sid))
     if (sSnap.exists()) {
       const d = sSnap.data()
       saidasMap[sid] = { id: sSnap.id, ...d, criado_em: tsToDateTime(d.criado_em) }
@@ -298,11 +309,11 @@ export async function extrairDadosNFdoPDF(base64Data) {
 }
 
 // Cria múltiplas NFs de uma vez (NF com vários itens)
-export async function criarNFsEntradaLote(itens, usuario) {
+export async function criarNFsEntradaLote(itens, usuario, colecoes = COLECOES_PADRAO) {
   // itens: [{ numero_nf, data_emissao, codigo_material, lote, volume_kg, valor_unitario, unidade_id }]
   const resultados = []
   for (const item of itens) {
-    const res = await criarNFEntrada(item, usuario)
+    const res = await criarNFEntrada(item, usuario, colecoes)
     resultados.push(res)
   }
   return resultados
@@ -312,8 +323,8 @@ export async function criarNFsEntradaLote(itens, usuario) {
 // PREVIEW FIFO (sem gravar — usado para confirmação)
 // ─────────────────────────────────────────────────────────────────
 
-export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unidadeId = '', volumeLiquido = null, volumeAbatimentoOverride = null } = {}) {
-  const snap = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
+export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unidadeId = '', volumeLiquido = null, volumeAbatimentoOverride = null, colecoes = COLECOES_PADRAO } = {}) {
+  const snap = await getDocs(query(collection(db, colecoes.nf_entrada), orderBy('data_emissao', 'asc')))
   const allNFs = snap.docs.map(docToObj)
 
   const filtrarNFs = (codMat, lote) => allNFs.filter(nf => {
@@ -343,7 +354,8 @@ export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unid
   const resultado = buildPreview(filtrarNFs(codigoMaterial, lotePoy), volumeAbatido)
 
   // Regra especial 135612: o abatimento (3,5% do volume líquido) é debitado de NFs de materiais companion
-  if (codigoMaterial === MATERIAL_ESPECIAL_135612.codigo) {
+  // Apenas para operação Rhodia
+  if (codigoMaterial === MATERIAL_ESPECIAL_135612.codigo && colecoes.nf_entrada === 'nf_entrada') {
     const volLiq = volumeLiquido != null ? volumeLiquido : volumeAbatido / (1 - MATERIAL_ESPECIAL_135612.percentual_abatimento)
     // Permite override manual do valor total do abatimento
     const volumeAbatimento = volumeAbatimentoOverride != null
@@ -363,7 +375,7 @@ export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unid
 // SAÍDA COM ALOCAÇÃO FIFO
 // ─────────────────────────────────────────────────────────────────
 
-export async function criarSaida(payload, usuario) {
+export async function criarSaida(payload, usuario, colecoes = COLECOES_PADRAO) {
   const {
     romaneio_microdata, codigo_material, lote_poy, lote_acabado,
     tipo_saida, volume_liquido_kg, volume_bruto_kg, quantidade,
@@ -372,8 +384,9 @@ export async function criarSaida(payload, usuario) {
   } = payload
 
   const temAbatimento         = TIPOS_COM_ABATIMENTO.includes(tipo_saida)
-  const isEspecial135612      = codigo_material === MATERIAL_ESPECIAL_135612.codigo
-  const volume_abatido_kg     = calcularVolumeAbatido(volume_liquido_kg, tipo_saida, codigo_material)
+  const isRhodia              = colecoes.nf_entrada === 'nf_entrada'
+  const isEspecial135612      = isRhodia && codigo_material === MATERIAL_ESPECIAL_135612.codigo
+  const volume_abatido_kg     = calcularVolumeAbatido(volume_liquido_kg, tipo_saida, isRhodia ? codigo_material : '')
   const percentual_abatimento = temAbatimento ? getPercentualAbatimento(codigo_material) : 0
   // volume_abatimento_kg: o valor que será distribuído entre os materiais companion
   const volume_abatimento_kg  = temAbatimento && isEspecial135612
@@ -382,7 +395,7 @@ export async function criarSaida(payload, usuario) {
         : volume_liquido_kg * MATERIAL_ESPECIAL_135612.percentual_abatimento)
     : 0
 
-  const snap = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
+  const snap = await getDocs(query(collection(db, colecoes.nf_entrada), orderBy('data_emissao', 'asc')))
   const nfsComSaldo = snap.docs.map(docToObj).filter(nf => {
     if (Number(nf.volume_saldo_kg) <= 0.001) return false
     if (unidade_id && (nf.unidade_id || '') !== unidade_id) return false
@@ -418,7 +431,7 @@ export async function criarSaida(payload, usuario) {
   const alocacoesCompanion = []
 
   if (isEspecial135612 && volume_abatimento_kg > 0) {
-    const snapComp = await getDocs(query(collection(db, 'nf_entrada'), orderBy('data_emissao', 'asc')))
+    const snapComp = await getDocs(query(collection(db, colecoes.nf_entrada), orderBy('data_emissao', 'asc')))
     const todasNFsComp = snapComp.docs.map(docToObj)
 
     for (const dist of MATERIAL_ESPECIAL_135612.distribuicao) {
@@ -449,7 +462,7 @@ export async function criarSaida(payload, usuario) {
 
   const now      = Timestamp.now()
   const batch    = writeBatch(db)
-  const saidaRef = doc(collection(db, 'saida'))
+  const saidaRef = doc(collection(db, colecoes.saida))
 
   batch.set(saidaRef, {
     romaneio_microdata,
@@ -472,7 +485,7 @@ export async function criarSaida(payload, usuario) {
   // Alocações principais (material 135612 → suas próprias NFs)
   const alocacoesRetorno = []
   for (const aloc of alocacoes) {
-    const alocRef  = doc(collection(db, 'alocacao_saida'))
+    const alocRef  = doc(collection(db, colecoes.alocacao_saida))
     const alocData = {
       saida_id: saidaRef.id, nf_entrada_id: aloc.nf_entrada_id,
       numero_nf: aloc.numero_nf, data_emissao: aloc.data_emissao,
@@ -484,13 +497,13 @@ export async function criarSaida(payload, usuario) {
   for (const aloc of alocacoes) {
     const nfOrig    = nfsComSaldo.find(n => n.id === aloc.nf_entrada_id)
     const novoSaldo = Number(nfOrig.volume_saldo_kg) - aloc.volume_alocado_kg
-    batch.update(doc(db, 'nf_entrada', aloc.nf_entrada_id), { volume_saldo_kg: Math.max(0, novoSaldo), atualizado_em: now })
+    batch.update(doc(db, colecoes.nf_entrada, aloc.nf_entrada_id), { volume_saldo_kg: Math.max(0, novoSaldo), atualizado_em: now })
   }
 
   // Alocações companion (abatimento 3,5% distribuído por material)
   const alocacoesCompanionRetorno = []
   for (const aloc of alocacoesCompanion) {
-    const alocRef  = doc(collection(db, 'alocacao_saida'))
+    const alocRef  = doc(collection(db, colecoes.alocacao_saida))
     const alocData = {
       saida_id: saidaRef.id, nf_entrada_id: aloc.nf_entrada_id,
       numero_nf: aloc.numero_nf, data_emissao: aloc.data_emissao,
@@ -504,14 +517,15 @@ export async function criarSaida(payload, usuario) {
   // Uma única update por NF companion (evita conflito no batch)
   for (const [nfId, info] of Object.entries(nfsCompanionDebits)) {
     const novoSaldo = info.saldo_original - info.totalDebit
-    batch.update(doc(db, 'nf_entrada', nfId), { volume_saldo_kg: Math.max(0, novoSaldo), atualizado_em: now })
+    batch.update(doc(db, colecoes.nf_entrada, nfId), { volume_saldo_kg: Math.max(0, novoSaldo), atualizado_em: now })
   }
 
   await batch.commit()
   await registrarLog(
     'SAIDA_REGISTRADA',
     `Romaneio ${romaneio_microdata} — ${volume_abatido_kg.toFixed(4)} kg (${TIPOS_SAIDA.find(t=>t.value===tipo_saida)?.label}) | ${codigo_material} / Lote ${lote_poy}`,
-    usuario
+    usuario,
+    colecoes
   )
 
   return {
@@ -528,10 +542,10 @@ export async function criarSaida(payload, usuario) {
   }
 }
 
-export async function listarSaidas(unidadeId = '') {
+export async function listarSaidas(unidadeId = '', colecoes = COLECOES_PADRAO) {
   const [saidasSnap, alocSnap] = await Promise.all([
-    getDocs(query(collection(db, 'saida'), orderBy('criado_em', 'desc'))),
-    getDocs(collection(db, 'alocacao_saida')),
+    getDocs(query(collection(db, colecoes.saida), orderBy('criado_em', 'desc'))),
+    getDocs(collection(db, colecoes.alocacao_saida)),
   ])
   const alocPorSaida = {}
   alocSnap.docs.forEach(d => {
@@ -553,12 +567,12 @@ export async function listarSaidas(unidadeId = '') {
 }
 
 // Exclui uma saída e estorna o saldo nas NFs de entrada
-export async function deletarSaida(saidaId, usuario) {
+export async function deletarSaida(saidaId, usuario, colecoes = COLECOES_PADRAO) {
   // Busca alocações desta saída para estornar
   const alocSnap = await getDocs(
-    query(collection(db, 'alocacao_saida'), where('saida_id', '==', saidaId))
+    query(collection(db, colecoes.alocacao_saida), where('saida_id', '==', saidaId))
   )
-  const saidaSnap = await getDoc(doc(db, 'saida', saidaId))
+  const saidaSnap = await getDoc(doc(db, colecoes.saida, saidaId))
   if (!saidaSnap.exists()) throw new Error('Saída não encontrada.')
   const saida = saidaSnap.data()
 
@@ -568,23 +582,23 @@ export async function deletarSaida(saidaId, usuario) {
   // Estorna saldo em cada NF alocada
   for (const alocDoc of alocSnap.docs) {
     const aloc   = alocDoc.data()
-    const nfSnap = await getDoc(doc(db, 'nf_entrada', aloc.nf_entrada_id))
+    const nfSnap = await getDoc(doc(db, colecoes.nf_entrada, aloc.nf_entrada_id))
     if (nfSnap.exists()) {
       const saldoAtual  = Number(nfSnap.data().volume_saldo_kg || 0)
       const novoSaldo   = saldoAtual + Number(aloc.volume_alocado_kg)
-      batch.update(doc(db, 'nf_entrada', aloc.nf_entrada_id), { volume_saldo_kg: novoSaldo, atualizado_em: now })
+      batch.update(doc(db, colecoes.nf_entrada, aloc.nf_entrada_id), { volume_saldo_kg: novoSaldo, atualizado_em: now })
     }
-    batch.delete(doc(db, 'alocacao_saida', alocDoc.id))
+    batch.delete(doc(db, colecoes.alocacao_saida, alocDoc.id))
   }
 
-  batch.delete(doc(db, 'saida', saidaId))
+  batch.delete(doc(db, colecoes.saida, saidaId))
   await batch.commit()
-  await registrarLog('SAIDA_EXCLUIDA', `Romaneio ${saida.romaneio_microdata} excluído — saldo estornado`, usuario)
+  await registrarLog('SAIDA_EXCLUIDA', `Romaneio ${saida.romaneio_microdata} excluído — saldo estornado`, usuario, colecoes)
 }
 
 // Verifica se número de NF já existe em qualquer unidade
-export async function verificarNFDuplicada(numeroNF) {
-  const snap = await getDocs(query(collection(db, 'nf_entrada'), where('numero_nf', '==', String(numeroNF).trim())))
+export async function verificarNFDuplicada(numeroNF, colecoes = COLECOES_PADRAO) {
+  const snap = await getDocs(query(collection(db, colecoes.nf_entrada), where('numero_nf', '==', String(numeroNF).trim())))
   if (snap.empty) return null
   const nf = snap.docs[0].data()
   return { existe: true, unidade_id: nf.unidade_id || '' }
@@ -658,7 +672,7 @@ export function exportarExcel(nfs, saidas) {
   XLSX.utils.book_append_sheet(wb, wsAloc, 'Alocações FIFO')
 
   const ts = format(new Date(), 'yyyyMMdd_HHmm')
-  XLSX.writeFile(wb, `faconagem_rhodia_${ts}.xlsx`)
+  XLSX.writeFile(wb, `faconagem_corradi_mazzer_${ts}.xlsx`)
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -690,7 +704,7 @@ function _buildRomaneioPDF(saida, alocacoes, config = {}, alocacoesCompanion = [
 
   pdoc.setTextColor(...WHITE)
   pdoc.setFontSize(16); pdoc.setFont('helvetica', 'bold')
-  pdoc.text('RHODIA FAÇONAGEM', W / 2, 13, { align: 'center' })
+  pdoc.text('CORRADI MAZZER — FAÇONAGEM', W / 2, 13, { align: 'center' })
   pdoc.setFontSize(10); pdoc.setFont('helvetica', 'normal')
   pdoc.text('ROMANEIO DE SAÍDA', W / 2, 21, { align: 'center' })
   pdoc.setFontSize(8)
@@ -859,7 +873,7 @@ function _buildRomaneioPDF(saida, alocacoes, config = {}, alocacoesCompanion = [
   pdoc.setFillColor(...DARK)
   pdoc.rect(0, pH - 12, W, 12, 'F')
   pdoc.setTextColor(...WHITE); pdoc.setFontSize(7); pdoc.setFont('helvetica', 'normal')
-  pdoc.text('Rhodia — Sistema de Controle de Façonagem', W / 2, pH - 4, { align: 'center' })
+  pdoc.text('Corradi Mazzer — Sistema de Controle de Façonagem', W / 2, pH - 4, { align: 'center' })
 
   return pdoc
 }
@@ -880,8 +894,8 @@ export function gerarRomaneioBase64(saida, alocacoes, config = {}, alocacoesComp
 // HISTÓRICO DE EDIÇÕES DE NF
 // ─────────────────────────────────────────────────────────────────
 
-export async function registrarEdicaoNF(nfId, dadosAntes, dadosDepois, usuario) {
-  await addDoc(collection(db, 'nf_historico'), {
+export async function registrarEdicaoNF(nfId, dadosAntes, dadosDepois, usuario, colecoes = COLECOES_PADRAO) {
+  await addDoc(collection(db, colecoes.nf_historico), {
     nf_id: nfId,
     dados_antes: dadosAntes,
     dados_depois: dadosDepois,
@@ -890,9 +904,9 @@ export async function registrarEdicaoNF(nfId, dadosAntes, dadosDepois, usuario) 
   })
 }
 
-export async function listarHistoricoNF(nfId) {
+export async function listarHistoricoNF(nfId, colecoes = COLECOES_PADRAO) {
   const snap = await getDocs(
-    query(collection(db, 'nf_historico'), where('nf_id', '==', nfId))
+    query(collection(db, colecoes.nf_historico), where('nf_id', '==', nfId))
   )
   return snap.docs
     .map(d => ({ id: d.id, ...d.data(), editado_em: tsToDateTime(d.data().editado_em) }))
@@ -903,13 +917,13 @@ export async function listarHistoricoNF(nfId) {
 // SAÍDA EM LOTE (múltiplos romaneios de uma vez)
 // ─────────────────────────────────────────────────────────────────
 
-export async function criarSaidasEmLote(saidas, usuario) {
+export async function criarSaidasEmLote(saidas, usuario, colecoes = COLECOES_PADRAO) {
   const resultados = []
   for (const saida of saidas) {
-    const result = await criarSaida(saida, usuario)
+    const result = await criarSaida(saida, usuario, colecoes)
     resultados.push(result)
   }
-  await registrarLog('SAIDA_LOTE', `${saidas.length} saídas registradas em lote`, usuario)
+  await registrarLog('SAIDA_LOTE', `${saidas.length} saídas registradas em lote`, usuario, colecoes)
   return resultados
 }
 
@@ -939,7 +953,7 @@ export function gerarRelatorioPDF(nfs, saidas, mes, ano, config = {}) {
   pdoc.setFillColor(...DARK); pdoc.rect(0, 0, W, 32, 'F')
   pdoc.setTextColor(...WHITE)
   pdoc.setFontSize(16); pdoc.setFont('helvetica', 'bold')
-  pdoc.text('RHODIA FAÇONAGEM', W/2, 12, { align: 'center' })
+  pdoc.text('CORRADI MAZZER — FAÇONAGEM', W/2, 12, { align: 'center' })
   pdoc.setFontSize(10); pdoc.setFont('helvetica', 'normal')
   pdoc.text(`RELATÓRIO MENSAL — ${mesLabel.toUpperCase()}`, W/2, 21, { align: 'center' })
   pdoc.setFontSize(8)
@@ -1117,7 +1131,7 @@ export function gerarRelatorioPDF(nfs, saidas, mes, ano, config = {}) {
     pdoc.setFillColor(...DARK)
     pdoc.rect(0, pH-10, W, 10, 'F')
     pdoc.setTextColor(...WHITE); pdoc.setFontSize(7); pdoc.setFont('helvetica', 'normal')
-    pdoc.text(`Rhodia — Controle de Façonagem  |  Pág. ${p}/${totalPages}`, W/2, pH-3, { align: 'center' })
+    pdoc.text(`Corradi Mazzer — Controle de Façonagem  |  Pág. ${p}/${totalPages}`, W/2, pH-3, { align: 'center' })
   }
 
   pdoc.save(`relatorio_${ano}${mes ? '_' + String(mes).padStart(2,'0') : ''}.pdf`)
@@ -1128,9 +1142,9 @@ export function gerarRelatorioPDF(nfs, saidas, mes, ano, config = {}) {
 // ─────────────────────────────────────────────────────────────────
 
 // Salva um inventário no Firestore
-export async function salvarInventario(unidadeId, linhas, usuario) {
+export async function salvarInventario(unidadeId, linhas, usuario, colecoes = COLECOES_PADRAO) {
   const now = Timestamp.now()
-  const ref = await addDoc(collection(db, 'inventario'), {
+  const ref = await addDoc(collection(db, colecoes.inventario), {
     unidade_id:  unidadeId,
     criado_em:   now,
     criado_por:  usuario?.email || '',
@@ -1145,15 +1159,16 @@ export async function salvarInventario(unidadeId, linhas, usuario) {
   await registrarLog(
     'INVENTARIO_SALVO',
     `Inventário com ${linhas.length} lotes — divergência total: ${linhas.reduce((a,l)=>a+Math.abs(l.divergencia_kg),0).toFixed(2)} kg`,
-    usuario
+    usuario,
+    colecoes
   )
   return ref.id
 }
 
 // Lista inventários históricos da unidade
-export async function listarInventarios(unidadeId) {
+export async function listarInventarios(unidadeId, colecoes = COLECOES_PADRAO) {
   const snap = await getDocs(
-    query(collection(db, 'inventario'), orderBy('criado_em', 'desc'))
+    query(collection(db, colecoes.inventario), orderBy('criado_em', 'desc'))
   )
   const todos = snap.docs.map(d => ({ id: d.id, ...d.data(), criado_em: tsToDateTime(d.data().criado_em) }))
   if (!unidadeId) return todos
@@ -1169,7 +1184,7 @@ export function gerarInventarioPDF(linhas, unidadeId, dataStr) {
   pdoc.setFillColor(...DARK); pdoc.rect(0, 0, W, 28, 'F')
   pdoc.setTextColor(...WHITE)
   pdoc.setFontSize(14); pdoc.setFont('helvetica', 'bold')
-  pdoc.text('RHODIA FAÇONAGEM — INVENTÁRIO FÍSICO', W/2, 11, { align: 'center' })
+  pdoc.text('CORRADI MAZZER — INVENTÁRIO FÍSICO', W/2, 11, { align: 'center' })
   pdoc.setFontSize(9); pdoc.setFont('helvetica', 'normal')
   pdoc.text(`Data: ${dataStr}  |  Unidade: ${unidadeId || 'Todas'}  |  Emitido em: ${format(new Date(), "dd/MM/yyyy 'às' HH:mm", {locale:ptBR})}`, W/2, 20, { align: 'center' })
 
@@ -1224,7 +1239,7 @@ export function gerarInventarioPDF(linhas, unidadeId, dataStr) {
   const pH = pdoc.internal.pageSize.height
   pdoc.setFillColor(...DARK); pdoc.rect(0, pH-10, W, 10, 'F')
   pdoc.setTextColor(...WHITE); pdoc.setFontSize(7)
-  pdoc.text('Rhodia — Controle de Façonagem', W/2, pH-3, { align: 'center' })
+  pdoc.text('Corradi Mazzer — Controle de Façonagem', W/2, pH-3, { align: 'center' })
 
   pdoc.save(`inventario_${format(new Date(), 'yyyy-MM-dd')}.pdf`)
 }
@@ -1245,7 +1260,7 @@ function pdfHeader(pdoc, titulo, subtitulo) {
   pdoc.setFillColor(...DARK_R); pdoc.rect(0,0,W,28,'F')
   pdoc.setTextColor(...WHITE_R)
   pdoc.setFontSize(13); pdoc.setFont('helvetica','bold')
-  pdoc.text('RHODIA FAÇONAGEM', W/2, 10, {align:'center'})
+  pdoc.text('CORRADI MAZZER — FAÇONAGEM', W/2, 10, {align:'center'})
   pdoc.setFontSize(9); pdoc.setFont('helvetica','normal')
   pdoc.text(titulo.toUpperCase(), W/2, 18, {align:'center'})
   if (subtitulo) { pdoc.setFontSize(7); pdoc.text(subtitulo, W/2, 24, {align:'center'}) }
@@ -1259,7 +1274,7 @@ function pdfFooter(pdoc) {
     const H = pdoc.internal.pageSize.height
     pdoc.setFillColor(...DARK_R); pdoc.rect(0,H-10,W,10,'F')
     pdoc.setTextColor(...WHITE_R); pdoc.setFontSize(7); pdoc.setFont('helvetica','normal')
-    pdoc.text(`Rhodia — Controle de Façonagem  |  Pág. ${p}/${total}`, W/2, H-3, {align:'center'})
+    pdoc.text(`Corradi Mazzer — Controle de Façonagem  |  Pág. ${p}/${total}`, W/2, H-3, {align:'center'})
   }
 }
 

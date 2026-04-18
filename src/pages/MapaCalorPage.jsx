@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { listarSaidas, TIPOS_SAIDA } from '../lib/faconagem'
 import { useUser } from '../lib/UserContext'
+import { useOperacao } from '../lib/OperacaoContext'
 
 const DIAS   = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 const HORAS  = Array.from({ length: 24 }, (_, i) => i)
@@ -18,6 +19,7 @@ function interpolarCor(valor, max) {
 
 export default function MapaCalorPage() {
   const { unidadeAtiva } = useUser() || {}
+  const { colecoes, operacaoAtiva } = useOperacao() || {}
   const [saidas,   setSaidas]   = useState([])
   const [loading,  setLoading]  = useState(true)
   const [metrica,  setMetrica]  = useState('volume')   // 'volume' | 'count'
@@ -26,11 +28,11 @@ export default function MapaCalorPage() {
 
   useEffect(() => {
     setLoading(true)
-    listarSaidas(unidadeAtiva || '')
+    listarSaidas(unidadeAtiva || '', colecoes)
       .then(setSaidas)
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [unidadeAtiva])
+  }, [unidadeAtiva, operacaoAtiva])
 
   // Filtra por período e tipo
   const saidasFiltradas = useMemo(() => {

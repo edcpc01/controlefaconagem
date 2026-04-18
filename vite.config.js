@@ -12,7 +12,7 @@ export default defineConfig({
       registerType: 'prompt',
       includeAssets: ['favicon.ico', 'icon-192.png', 'icon-512.png'],
       manifest: {
-        name: 'Façonagem Rhodia - Controle de Entradas e Saídas',
+        name: 'Façonagem Corradi Mazzer - Controle de Entradas e Saídas',
         short_name: 'Façonagem',
         description: 'Sistema de controle de façonagem - entradas e saídas',
         theme_color: '#1a3a6b',

@@ -54,7 +54,7 @@ export default async function handler(req, res) {
 
         <!-- Header -->
         <tr><td style="background:#0f2850;padding:28px 32px;">
-          <div style="color:#fff;font-size:22px;font-weight:700;letter-spacing:0.5px;">⬡ Façonagem Rhodia</div>
+          <div style="color:#fff;font-size:22px;font-weight:700;letter-spacing:0.5px;">⬡ Façonagem Corradi Mazzer</div>
           <div style="color:#7db3ff;font-size:13px;margin-top:4px;">Sistema de Controle de Façonagem</div>
         </td></tr>
 
@@ -113,7 +113,7 @@ export default async function handler(req, res) {
         <!-- Footer -->
         <tr><td style="background:#f8faff;padding:16px 32px;border-top:1px solid #e8edf5;">
           <p style="margin:0;font-size:11px;color:#999;">
-            Este e-mail foi gerado automaticamente pelo sistema de controle de façonagem da Rhodia.<br>
+            Este e-mail foi gerado automaticamente pelo sistema de controle de façonagem da Corradi Mazzer.<br>
             ${isLote ? `${romaneios.length} PDF${romaneios.length > 1 ? 's' : ''} em anexo.` : '1 PDF em anexo.'}
           </p>
         </td></tr>
@@ -134,7 +134,7 @@ export default async function handler(req, res) {
 
   // ── Envia via Resend ─────────────────────────────────────
   const payload = {
-    from:    'Façonagem Rhodia <noreply@faconagem.rhodia.com.br>',
+    from:    'Façonagem Corradi Mazzer <noreply@corradimazzer.com.br>',
     to:      [emailDestino],
     subject: isLote
       ? `📦 Lote de ${romaneios.length} Romaneios — ${fmt(totalKg)} kg`

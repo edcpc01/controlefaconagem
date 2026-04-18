@@ -1,4 +1,4 @@
-// Service Worker customizado — Façonagem Rhodia
+// Service Worker customizado — Façonagem Corradi Mazzer
 // Responde ao comando SKIP_WAITING enviado pelo banner de atualização
 
 self.addEventListener('message', event => {

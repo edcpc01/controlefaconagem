@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { listarNFsEntrada, listarSaidas, gerarRelatorioPDF, TIPOS_SAIDA } from '../lib/faconagem'
 import { useUser } from '../lib/UserContext'
+import { useOperacao } from '../lib/OperacaoContext'
 
 const fmt  = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const pct  = (v, base) => base > 0 ? ((v / base) * 100).toFixed(1) : '0.0'
@@ -179,6 +180,7 @@ function LoteCard({ lote, nfsPeriodo, saidasPeriodo }) {
 
 export default function KpisPage() {
   const { unidadeAtiva } = useUser() || {}
+  const { colecoes, operacaoAtiva } = useOperacao() || {}
   const now = new Date()
 
   const [nfs,    setNfs]    = useState([])
@@ -192,11 +194,11 @@ export default function KpisPage() {
 
   useEffect(() => {
     setLoading(true)
-    Promise.all([listarNFsEntrada(unidadeAtiva || ''), listarSaidas(unidadeAtiva || '')])
+    Promise.all([listarNFsEntrada(unidadeAtiva || '', colecoes), listarSaidas(unidadeAtiva || '', colecoes)])
       .then(([n, s]) => { setNfs(n); setSaidas(s) })
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [unidadeAtiva])
+  }, [unidadeAtiva, operacaoAtiva])
 
   const nfsPeriodo    = filtraPeriodo(nfs,    'data_emissao', mesSel, anoSel)
   const saidasPeriodo = filtraPeriodo(saidas, 'criado_em',    mesSel, anoSel)

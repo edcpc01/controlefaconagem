@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { buscarAlocacoesPorNF, listarHistoricoNF, TIPOS_SAIDA } from '../lib/faconagem'
+import { useOperacao } from '../lib/OperacaoContext'
 import { db } from '../lib/firebase'
 import { doc, getDoc } from 'firebase/firestore'
 import { format } from 'date-fns'
@@ -29,6 +30,7 @@ function tsToISO(ts) {
 export default function NFDetailPage() {
   const { id } = useParams()
   const navigate = useNavigate()
+  const { colecoes } = useOperacao() || {}
   const [nf,       setNf]      = useState(null)
   const [alocacoes, setAloc]   = useState([])
   const [historico, setHist]   = useState([])
@@ -40,7 +42,7 @@ export default function NFDetailPage() {
       setLoading(true)
       setErro('')
       try {
-        const nfSnap = await getDoc(doc(db, 'nf_entrada', id))
+        const nfSnap = await getDoc(doc(db, colecoes?.nf_entrada || 'nf_entrada', id))
         if (!nfSnap.exists()) {
           setErro('NF não encontrada no banco de dados.')
           return
@@ -52,8 +54,8 @@ export default function NFDetailPage() {
           criado_em: tsToISO(d.criado_em),
         })
         const [alocs, hist] = await Promise.all([
-          buscarAlocacoesPorNF(id),
-          listarHistoricoNF(id),
+          buscarAlocacoesPorNF(id, colecoes),
+          listarHistoricoNF(id, colecoes),
         ])
         setAloc(alocs)
         setHist(hist)
@@ -64,7 +66,7 @@ export default function NFDetailPage() {
       }
     }
     carregar()
-  }, [id])
+  }, [id, colecoes])
 
   if (loading) return <div className="loading"><div className="spinner"></div><div>Carregando...</div></div>
 

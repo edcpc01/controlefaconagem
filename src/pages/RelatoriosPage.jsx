@@ -8,6 +8,7 @@ import {
   relInventarioPDF,     relInventarioXLSX,
 } from '../lib/faconagem'
 import { useUser } from '../lib/UserContext'
+import { useOperacao } from '../lib/OperacaoContext'
 
 const fmt = n => Number(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
 
@@ -17,6 +18,7 @@ function Toast({ toasts }) {
 
 export default function RelatoriosPage() {
   const { unidadeAtiva } = useUser() || {}
+  const { colecoes, operacaoAtiva } = useOperacao() || {}
 
   const [nfs,        setNfs]        = useState([])
   const [saidas,     setSaidas]     = useState([])
@@ -41,9 +43,9 @@ export default function RelatoriosPage() {
   useEffect(() => {
     setLoading(true)
     Promise.all([
-      listarNFsEntrada(unidadeAtiva||''),
-      listarSaidas(unidadeAtiva||''),
-      listarInventarios(unidadeAtiva||''),
+      listarNFsEntrada(unidadeAtiva||'', colecoes),
+      listarSaidas(unidadeAtiva||'', colecoes),
+      listarInventarios(unidadeAtiva||'', colecoes),
     ]).then(async ([n, s, inv]) => {
       setNfs(n)
       setSaidas(s)
@@ -52,14 +54,14 @@ export default function RelatoriosPage() {
       const todasAloc = []
       await Promise.all(n.map(async nf => {
         try {
-          const alocs = await buscarAlocacoesPorNF(nf.id)
+          const alocs = await buscarAlocacoesPorNF(nf.id, colecoes)
           todasAloc.push(...alocs)
         } catch {}
       }))
       setAlocacoes(todasAloc)
     }).catch(e => toast(e.message,'error'))
       .finally(() => setLoading(false))
-  }, [unidadeAtiva])
+  }, [unidadeAtiva, operacaoAtiva])
 
   // Aplica filtros
   const aplicarFiltros = (items, campoData) => {

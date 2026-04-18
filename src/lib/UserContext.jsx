@@ -71,8 +71,10 @@ export function UserProvider({ children, firebaseUser }) {
     return unsub
   }, [firebaseUser?.uid])
 
-  const isAdmin      = perfil?.role === 'admin'
-  const isSupervisor = perfil?.role === 'supervisor'
+  const isAdmin            = perfil?.role === 'admin'
+  const isSupervisor       = perfil?.role === 'supervisor_rhodia' || perfil?.role === 'supervisor_nilit'
+  const isSupervisorRhodia = perfil?.role === 'supervisor_rhodia'
+  const isSupervisorNilit  = perfil?.role === 'supervisor_nilit'
 
   const trocarUnidade = (id) => {
     if (!isAdmin && !isSupervisor) return   // só admin e supervisor podem trocar
@@ -91,7 +93,8 @@ export function UserProvider({ children, firebaseUser }) {
 
   return (
     <UserContext.Provider value={{
-      perfil, isAdmin, isSupervisor, unidadeAtiva, loadingPerfil,
+      perfil, isAdmin, isSupervisor, isSupervisorRhodia, isSupervisorNilit,
+      unidadeAtiva, loadingPerfil,
       trocarUnidade, atualizarUsuario, listarUsuarios,
     }}>
       {children}

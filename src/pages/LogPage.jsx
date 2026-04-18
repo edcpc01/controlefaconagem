@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { listarLogs } from '../lib/faconagem'
+import { useOperacao } from '../lib/OperacaoContext'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 
@@ -10,13 +11,15 @@ const ACAO_CONFIG = {
 }
 
 export default function LogPage() {
+  const { colecoes, operacaoAtiva } = useOperacao()
   const [logs, setLogs]       = useState([])
   const [loading, setLoading] = useState(true)
   const [busca, setBusca]     = useState('')
 
   useEffect(() => {
-    listarLogs().then(setLogs).finally(() => setLoading(false))
-  }, [])
+    setLoading(true)
+    listarLogs(colecoes).then(setLogs).finally(() => setLoading(false))
+  }, [operacaoAtiva])
 
   const filtered = logs.filter(l =>
     !busca ||

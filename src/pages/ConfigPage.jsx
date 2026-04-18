@@ -3,6 +3,7 @@ import { salvarConfig, carregarConfig } from '../lib/faconagem'
 import { useTheme } from '../lib/ThemeContext'
 import { useAuth } from '../lib/AuthContext'
 import { useUser, UNIDADES_DEFAULT } from '../lib/UserContext'
+import { useOperacao } from '../lib/OperacaoContext'
 import { db } from '../lib/firebase'
 import { doc, setDoc, getDocs, collection, Timestamp } from 'firebase/firestore'
 
@@ -20,6 +21,7 @@ export default function ConfigPage() {
   const { theme, toggle }      = useTheme()
   const { user, logout }       = useAuth()
   const { perfil, isAdmin, trocarUnidade, unidadeAtiva, listarUsuarios } = useUser() || {}
+  const { colecoes } = useOperacao() || {}
 
   const [logoBase64, setLogoBase64] = useState('')
   const [logoPreview, setLogoPreview] = useState('')
@@ -35,10 +37,10 @@ export default function ConfigPage() {
   }
 
   useEffect(() => {
-    carregarConfig().then(cfg => {
+    carregarConfig(colecoes).then(cfg => {
       if (cfg.logoBase64) { setLogoBase64(cfg.logoBase64); setLogoPreview(cfg.logoBase64) }
     })
-  }, [])
+  }, [colecoes])
 
   const handleLogoChange = (e) => {
     const file = e.target.files?.[0]
@@ -52,7 +54,7 @@ export default function ConfigPage() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      await salvarConfig({ logoBase64 })
+      await salvarConfig({ logoBase64 }, colecoes)
       toast('Configurações salvas!')
     } catch (e) {
       toast(e.message, 'error')

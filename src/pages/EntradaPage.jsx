@@ -7,6 +7,7 @@ import {
 } from '../lib/faconagem'
 import { useAuth } from '../lib/AuthContext'
 import { useUser } from '../lib/UserContext'
+import { useOperacao } from '../lib/OperacaoContext'
 import { format } from 'date-fns'
 
 function Toast({ toasts }) {
@@ -234,6 +235,7 @@ function PainelMultiItem({ itens, onSalvar, onCancelar, loading, initialNF, init
 export default function EntradaPage() {
   const { user }   = useAuth()
   const { unidadeAtiva, isSupervisor } = useUser() || {}
+  const { colecoes, operacaoAtiva } = useOperacao() || {}
   const navigate   = useNavigate()
   const pdfRef     = useRef()
   const [nfs, setNfs]                 = useState([])
@@ -258,10 +260,10 @@ export default function EntradaPage() {
 
   const load = () => {
     setLoadingList(true)
-    listarNFsEntrada(unidadeAtiva || '').then(setNfs).catch(e => toast(e.message, 'error')).finally(() => setLoadingList(false))
+    listarNFsEntrada(unidadeAtiva || '', colecoes).then(setNfs).catch(e => toast(e.message, 'error')).finally(() => setLoadingList(false))
   }
 
-  useEffect(() => { load() }, [unidadeAtiva])
+  useEffect(() => { load() }, [unidadeAtiva, operacaoAtiva])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const setEdit = (k, v) => setEditForm(f => ({ ...f, [k]: v }))
@@ -313,8 +315,8 @@ export default function EntradaPage() {
     }
     setLoading(true)
     try {
-      const dup = await verificarNFDuplicada(form.numero_nf.trim(), form.codigo_material.trim())
-      if (dup) { toast(`NF ${form.numero_nf} com material ${form.codigo_material} já cadastrada!`, 'error'); return }
+      const dup = await verificarNFDuplicada(form.numero_nf.trim(), colecoes)
+      if (dup) { toast(`NF ${form.numero_nf} já cadastrada!`, 'error'); return }
       await criarNFEntrada({
         data_emissao:    form.data_emissao,
         numero_nf:       form.numero_nf.trim(),
@@ -323,7 +325,7 @@ export default function EntradaPage() {
         volume_kg:       parseFloat(form.volume_kg),
         valor_unitario:  parseFloat(form.valor_unitario),
         unidade_id:      unidadeAtiva || '',
-      }, user)
+      }, user, colecoes)
       toast('NF cadastrada com sucesso!')
       setForm(EMPTY_FORM)
       load()
@@ -347,7 +349,7 @@ export default function EntradaPage() {
         valor_unitario:  parseFloat(l.valor_unitario),
         unidade_id:      unidadeAtiva || '',
       }))
-      await criarNFsEntradaLote(itensPayload, user)
+      await criarNFsEntradaLote(itensPayload, user, colecoes)
       toast(`✅ ${linhas.length} item${linhas.length!==1?'s':''} da NF ${nfNum} cadastrado${linhas.length!==1?'s':''}!`)
       setMultiItens(null)
       load()
@@ -385,7 +387,7 @@ export default function EntradaPage() {
         volume_kg:       parseFloat(editForm.volume_kg),
         valor_unitario:  parseFloat(editForm.valor_unitario),
         unidade_id:      editando.unidade_id || unidadeAtiva || '',
-      }, user)
+      }, user, colecoes)
       toast('NF atualizada!')
       setEditando(null)
       load()
@@ -399,7 +401,7 @@ export default function EntradaPage() {
   const handleDeletar = async () => {
     if (!confirmDelete) return
     try {
-      await deletarNFEntrada(confirmDelete.id, user)
+      await deletarNFEntrada(confirmDelete.id, confirmDelete.numero_nf, user, colecoes)
       toast('NF removida.')
       setConfirmDelete(null)
       load()

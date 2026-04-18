@@ -53,7 +53,7 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
         'HTTP-Referer': 'https://controlefaconagem.vercel.app',
-        'X-Title': 'Façonagem Rhodia',
+        'X-Title': 'Façonagem Corradi Mazzer',
       },
       body: JSON.stringify({
         model: 'arcee-ai/trinity-large-preview:free',

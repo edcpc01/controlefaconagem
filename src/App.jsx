@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-do
 import { AuthProvider, useAuth } from './lib/AuthContext'
 import { ThemeProvider, useTheme } from './lib/ThemeContext'
 import { UserProvider, useUser, UNIDADES_DEFAULT } from './lib/UserContext'
+import { OperacaoProvider, useOperacao, OPERACOES } from './lib/OperacaoContext'
 import { listarNFsEntrada, statusVencimentoNF } from './lib/faconagem'
 import EntradaPage    from './pages/EntradaPage'
 import SaidaPage      from './pages/SaidaPage'
@@ -165,20 +166,55 @@ function UnidadeSelector() {
   )
 }
 
+// ── Seletor de Operação no header ────────────────────────────────
+function OperacaoSelector() {
+  const opCtx = useOperacao()
+  if (!opCtx) return null
+
+  const { operacaoAtiva, trocarOperacao, operacaoInfo, podeTrocar } = opCtx
+
+  if (!podeTrocar) {
+    // Supervisor — mostra badge estático
+    return (
+      <div className="operacao-badge" style={{ background: operacaoInfo.cor + '22', borderColor: operacaoInfo.cor + '55' }}>
+        <span style={{ width: 8, height: 8, borderRadius: '50%', background: operacaoInfo.cor, display: 'inline-block' }} />
+        <span style={{ fontSize: 12, fontWeight: 600, color: operacaoInfo.cor }}>{operacaoInfo.label}</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="operacao-selector-wrap" title="Operação ativa">
+      <span style={{ width: 8, height: 8, borderRadius: '50%', background: operacaoInfo.cor, display: 'inline-block' }} />
+      <select
+        className="operacao-select"
+        value={operacaoAtiva}
+        onChange={e => trocarOperacao(e.target.value)}
+        style={{ borderColor: operacaoInfo.cor + '55' }}
+      >
+        {OPERACOES.map(o => (
+          <option key={o.id} value={o.id}>{o.label}</option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
 // ── Layout principal ─────────────────────────────────────────────
 function Layout({ children }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const { theme, toggle }       = useTheme()
   const { user, logout }        = useAuth()
   const ctx                     = useUser()
+  const opCtx                   = useOperacao()
   const isAdmin      = ctx?.isAdmin ?? false
   const isSupervisor = ctx?.isSupervisor ?? false
   const [nfsAlertaCount, setNfsAlertaCount] = useState(0)
 
   // Carrega badge de vencimento + dispara notificação push ao abrir
   useEffect(() => {
-    if (!ctx?.unidadeAtiva) return
-    listarNFsEntrada(ctx.unidadeAtiva).then(nfs => {
+    if (!ctx?.unidadeAtiva || !opCtx?.colecoes) return
+    listarNFsEntrada(ctx.unidadeAtiva, opCtx.colecoes).then(nfs => {
       const alertas = nfs.filter(n => ['vencida','alerta'].includes(statusVencimentoNF(n)))
       setNfsAlertaCount(alertas.length)
 
@@ -192,7 +228,7 @@ function Layout({ children }) {
         const linhas = []
         if (vencidas > 0) linhas.push(`🚨 ${vencidas} NF${vencidas>1?'s':''} vencida${vencidas>1?'s':''}`)
         if (emAlerta > 0) linhas.push(`⚠️ ${emAlerta} NF${emAlerta>1?'s':''} vencem em breve`)
-        new Notification('Façonagem Rhodia — Atenção!', {
+        new Notification('Façonagem Corradi Mazzer — Atenção!', {
           body: linhas.join('\n'),
           icon: '/icon-192.png',
           badge: '/icon-192.png',
@@ -206,7 +242,7 @@ function Layout({ children }) {
         Notification.requestPermission().then(p => { if (p === 'granted') disparar() })
       }
     }).catch(() => {})
-  }, [ctx?.unidadeAtiva])
+  }, [ctx?.unidadeAtiva, opCtx?.operacaoAtiva])
 
   const NAV_SUPERVISOR = [
     { to: '/',           label: 'Dashboard',  icon: '◈', end: true },
@@ -241,7 +277,7 @@ function Layout({ children }) {
             <span className="brand-icon">⬡</span>
             <div>
               <div className="brand-title">Façonagem</div>
-              <div className="brand-sub">Rhodia</div>
+              <div className="brand-sub">Corradi Mazzer</div>
             </div>
           </div>
 
@@ -261,13 +297,16 @@ function Layout({ children }) {
 
           {/* Actions */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div className="header-operacao-selector">
+              <OperacaoSelector />
+            </div>
             <div className="header-unit-selector">
               <UnidadeSelector />
             </div>
             <button className="btn-theme-icon" onClick={toggle} title="Alternar tema">
               {theme === 'dark' ? '☀' : '🌙'}
             </button>
-            <div className="user-chip" title={`${ctx?.perfil?.role === 'admin' ? 'Admin' : ctx?.perfil?.role === 'supervisor' ? 'Supervisor' : 'Analista'} — ${user?.email}`}>
+            <div className="user-chip" title={`${ctx?.perfil?.role === 'admin' ? 'Admin' : ctx?.isSupervisor ? 'Supervisor' : 'Analista'} — ${user?.email}`}>
               {user?.photoURL
                 ? <img src={user.photoURL} alt="" style={{ width: 26, height: 26, borderRadius: '50%' }} />
                 : <span style={{ fontSize: 13 }}>{(user?.displayName || user?.email || '?')[0].toUpperCase()}</span>
@@ -292,6 +331,9 @@ function Layout({ children }) {
               )
             })}
             <div style={{ margin: '8px 0', padding: '8px 0', borderTop: '1px solid var(--border)' }}>
+              <OperacaoSelector />
+            </div>
+            <div style={{ margin: '4px 0', padding: '4px 0', borderTop: '1px solid var(--border)' }}>
               <UnidadeSelector />
             </div>
             <button className="btn btn-danger btn-sm" style={{ alignSelf: 'flex-start', marginTop: 4 }} onClick={logout}>
@@ -352,7 +394,9 @@ function AppWithUser() {
   const { user } = useAuth()
   return (
     <UserProvider firebaseUser={user ?? null}>
-      <ProtectedApp />
+      <OperacaoProvider>
+        <ProtectedApp />
+      </OperacaoProvider>
     </UserProvider>
   )
 }

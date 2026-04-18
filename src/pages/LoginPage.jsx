@@ -33,7 +33,7 @@ export default function LoginPage() {
         <div className="login-brand">
           <div className="login-brand-icon">⬡</div>
           <div className="login-brand-title">Façonagem</div>
-          <div className="login-brand-sub">Rhodia Santo André</div>
+          <div className="login-brand-sub">Corradi Mazzer</div>
         </div>
 
         <div className="login-divider" />

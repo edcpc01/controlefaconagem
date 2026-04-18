@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { listarNFsEntrada, listarInventarios, salvarInventario, gerarInventarioPDF } from '../lib/faconagem'
 import { useUser } from '../lib/UserContext'
+import { useOperacao } from '../lib/OperacaoContext'
 import { useAuth } from '../lib/AuthContext'
 
 const fmt = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -18,6 +19,7 @@ function Toast({ toasts }) {
 
 export default function InventarioPage() {
   const { unidadeAtiva } = useUser() || {}
+  const { colecoes, operacaoAtiva } = useOperacao() || {}
   const { user } = useAuth()
 
   const [nfs,        setNfs]        = useState([])
@@ -38,14 +40,14 @@ export default function InventarioPage() {
   useEffect(() => {
     setLoading(true)
     Promise.all([
-      listarNFsEntrada(unidadeAtiva || ''),
-      listarInventarios(unidadeAtiva || ''),
+      listarNFsEntrada(unidadeAtiva || '', colecoes),
+      listarInventarios(unidadeAtiva || '', colecoes),
     ]).then(([n, h]) => {
       setNfs(n)
       setHistorico(h)
     }).catch(e => toast(e.message, 'error'))
       .finally(() => setLoading(false))
-  }, [unidadeAtiva])
+  }, [unidadeAtiva, operacaoAtiva])
 
   // Saldo teórico agrupado por lote
   const saldosPorLote = useMemo(() => {
@@ -81,10 +83,10 @@ export default function InventarioPage() {
     if (linhesPreenchidas.length === 0) { toast('Preencha ao menos uma contagem física.', 'error'); return }
     setSalvando(true)
     try {
-      await salvarInventario(unidadeAtiva || '', linhesPreenchidas, user)
+      await salvarInventario(unidadeAtiva || '', linhesPreenchidas, user, colecoes)
       setSalvo(true)
       toast('✅ Inventário salvo com sucesso!')
-      const h = await listarInventarios(unidadeAtiva || '')
+      const h = await listarInventarios(unidadeAtiva || '', colecoes)
       setHistorico(h)
     } catch (e) {
       toast(e.message || 'Erro ao salvar inventário.', 'error')
