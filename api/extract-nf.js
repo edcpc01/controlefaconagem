@@ -56,7 +56,7 @@ export default async function handler(req, res) {
         'X-Title': 'Façonagem Corradi Mazzer',
       },
       body: JSON.stringify({
-        model: 'arcee-ai/trinity-large-preview:free',
+        model: 'google/gemini-2.5-flash',
         max_tokens: 1024,
         temperature: 0,
         messages: [
