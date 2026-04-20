@@ -14,7 +14,7 @@ function Toast({ toasts }) {
   return <div className="toast-container">{toasts.map(t => <div key={t.id} className={`toast ${t.type}`}>{t.msg}</div>)}</div>
 }
 
-const EMPTY_FORM = { data_emissao: '', numero_nf: '', codigo_material: '', descricao_material: '', lote: '', volume_kg: '', valor_unitario: '' }
+const EMPTY_FORM = { data_emissao: '', numero_nf: '', codigo_material: '', descricao_material: '', lote: '', volume_kg: '', valor_unitario: '', tipo_material: 'materia_prima' }
 const fmt         = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 const fmtCurrency = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 6 })
 
@@ -64,11 +64,18 @@ function NFForm({ form, set, onSubmit, onCancel, loading, extracting, onPDFUploa
           <input type="text" className="form-input" placeholder="Ex: POY, Tubete..." value={form.descricao_material} onChange={e => set('descricao_material', e.target.value)} />
         </div>
         <div className="form-group">
+          <label className="form-label">Tipo de Material *</label>
+          <select className="form-input" value={form.tipo_material} onChange={e => set('tipo_material', e.target.value)}>
+            <option value="materia_prima">Matéria Prima</option>
+            <option value="insumo">Insumo</option>
+          </select>
+        </div>
+        <div className="form-group">
           <label className="form-label">Lote POY</label>
           <input type="text" className="form-input" placeholder="Ex: 37553" value={form.lote} onChange={e => set('lote', e.target.value)} />
         </div>
         <div className="form-group">
-          <label className="form-label">Volume (kg) *</label>
+          <label className="form-label">{form.tipo_material === 'insumo' ? 'Volume/Qtd *' : 'Volume (kg) *'}</label>
           <input type="number" step="0.001" min="0" className="form-input" placeholder="0,000" value={form.volume_kg} onChange={e => set('volume_kg', e.target.value)} />
         </div>
         <div className="form-group">
@@ -109,7 +116,7 @@ function PainelMultiItem({ itens, onSalvar, onCancelar, loading, initialNF, init
   const setLinha = (id, campo, valor) =>
     setLinhas(ls => ls.map(l => l._id === id ? {...l, [campo]: valor} : l))
   const addLinha = () =>
-    setLinhas(ls => [...ls, { _id: nextId.current++, incluir:true, codigo_material:'', descricao_material:'', lote:'', volume_kg:'', valor_unitario:'' }])
+    setLinhas(ls => [...ls, { _id: nextId.current++, incluir:true, codigo_material:'', descricao_material:'', lote:'', volume_kg:'', valor_unitario:'', tipo_material:'materia_prima' }])
   const removeLinha = (id) => setLinhas(ls => ls.filter(l => l._id !== id))
 
   const totalVol = linhas.filter(l=>l.incluir).reduce((a,l) => a + (parseFloat(l.volume_kg)||0), 0)
@@ -165,8 +172,9 @@ function PainelMultiItem({ itens, onSalvar, onCancelar, loading, initialNF, init
               </th>
               <th style={{padding:'8px 10px', textAlign:'left', color:'var(--text-dim)', fontWeight:600}}>Cód. Material *</th>
               <th style={{padding:'8px 10px', textAlign:'left', color:'var(--text-dim)', fontWeight:600}}>Descrição</th>
+              <th style={{padding:'8px 10px', textAlign:'left', color:'var(--text-dim)', fontWeight:600}}>Tipo *</th>
               <th style={{padding:'8px 10px', textAlign:'left', color:'var(--text-dim)', fontWeight:600}}>Lote POY</th>
-              <th style={{padding:'8px 10px', textAlign:'right', color:'var(--text-dim)', fontWeight:600}}>Volume (kg) *</th>
+              <th style={{padding:'8px 10px', textAlign:'right', color:'var(--text-dim)', fontWeight:600}}>Volume *</th>
               <th style={{padding:'8px 10px', textAlign:'right', color:'var(--text-dim)', fontWeight:600}}>Valor Unit. (R$) *</th>
               <th style={{padding:'8px 10px', textAlign:'right', color:'var(--text-dim)', fontWeight:600}}>Total (R$)</th>
               <th style={{padding:'8px 10px', width:36}}></th>
@@ -187,6 +195,14 @@ function PainelMultiItem({ itens, onSalvar, onCancelar, loading, initialNF, init
                   <input className="form-input" style={{width:150}}
                     placeholder="Descrição"
                     value={l.descricao_material} onChange={e => setLinha(l._id,'descricao_material',e.target.value)} />
+                </td>
+                <td style={{padding:'6px 10px'}}>
+                  <select className="form-input" style={{width:130}}
+                    value={l.tipo_material || 'materia_prima'}
+                    onChange={e => setLinha(l._id,'tipo_material',e.target.value)}>
+                    <option value="materia_prima">Mat. Prima</option>
+                    <option value="insumo">Insumo</option>
+                  </select>
                 </td>
                 <td style={{padding:'6px 10px'}}>
                   <input className="form-input" style={{width:90, fontFamily:'monospace'}}
@@ -336,6 +352,7 @@ export default function EntradaPage() {
         lote:            form.lote?.trim() || '',
         volume_kg:       parseFloat(form.volume_kg),
         valor_unitario:  parseFloat(form.valor_unitario),
+        tipo_material:   form.tipo_material || 'materia_prima',
         unidade_id:      unidadeAtiva || '',
       }, user, colecoes)
       toast('NF cadastrada com sucesso!')
@@ -360,6 +377,7 @@ export default function EntradaPage() {
         lote:            l.lote?.trim() || '',
         volume_kg:       parseFloat(l.volume_kg),
         valor_unitario:  parseFloat(l.valor_unitario),
+        tipo_material:   l.tipo_material || 'materia_prima',
         unidade_id:      unidadeAtiva || '',
       }))
       await criarNFsEntradaLote(itensPayload, user, colecoes)
@@ -384,6 +402,7 @@ export default function EntradaPage() {
       lote:            nf.lote || '',
       volume_kg:       String(nf.volume_kg || ''),
       valor_unitario:  String(nf.valor_unitario || ''),
+      tipo_material:   nf.tipo_material || 'materia_prima',
     })
   }
 
@@ -401,6 +420,7 @@ export default function EntradaPage() {
         lote:            editForm.lote?.trim() || '',
         volume_kg:       parseFloat(editForm.volume_kg),
         valor_unitario:  parseFloat(editForm.valor_unitario),
+        tipo_material:   editForm.tipo_material || 'materia_prima',
         unidade_id:      editando.unidade_id || unidadeAtiva || '',
       }, user, colecoes)
       toast('NF atualizada!')
@@ -459,7 +479,7 @@ export default function EntradaPage() {
               <span style={{color: n.diasRestantes<=7?'var(--danger)':'var(--warn)', fontWeight:600}}>
                 {n.diasRestantes===0?'Vence hoje!':`${n.diasRestantes} dia${n.diasRestantes!==1?'s':''} restante${n.diasRestantes!==1?'s':''}`}
               </span>
-              <span style={{color:'var(--text-dim)'}}>Saldo: {Number(n.volume_saldo_kg).toLocaleString('pt-BR',{minimumFractionDigits:2})} kg</span>
+              <span style={{color:'var(--text-dim)'}}>Saldo: {Number(n.volume_saldo_kg).toLocaleString('pt-BR',{minimumFractionDigits:2})}{n.tipo_material !== 'insumo' ? ' kg' : ''}</span>
             </div>
           ))}
         </div>
@@ -521,8 +541,8 @@ export default function EntradaPage() {
                   <th>Emissão</th>
                   <th className="col-hide-mobile">Cód. Material</th>
                   <th>Lote POY</th>
-                  <th className="td-right col-hide-mobile">Volume (kg)</th>
-                  <th className="td-right">Saldo (kg)</th>
+                  <th className="td-right col-hide-mobile">Volume</th>
+                  <th className="td-right">Saldo</th>
                   <th className="td-right col-hide-mobile">V. Unitário</th>
                   <th style={{width:90}}></th>
                 </tr>
@@ -548,9 +568,11 @@ export default function EntradaPage() {
                         {nf.descricao_material && <div style={{fontSize: 10, color: 'var(--text-dim)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 120}} title={nf.descricao_material}>{nf.descricao_material}</div>}
                       </td>
                       <td>{nf.lote || '—'}</td>
-                      <td className="td-right td-mono col-hide-mobile">{fmt(nf.volume_kg)}</td>
+                      <td className="td-right td-mono col-hide-mobile">
+                        {fmt(nf.volume_kg)}{nf.tipo_material !== 'insumo' ? ' kg' : ''}
+                      </td>
                       <td className="td-right td-mono" style={{color:Number(nf.volume_saldo_kg)<=0.01?'var(--danger)':'var(--accent-2)',fontWeight:600}}>
-                        {fmt(nf.volume_saldo_kg)}
+                        {fmt(nf.volume_saldo_kg)}{nf.tipo_material !== 'insumo' ? ' kg' : ''}
                       </td>
                       <td className="td-right td-mono col-hide-mobile">{fmtCurrency(nf.valor_unitario)}</td>
                       <td style={{width:90, minWidth:90, overflow:'visible'}}>

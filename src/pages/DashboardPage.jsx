@@ -38,9 +38,12 @@ function agruparSaidasPorLote(saidas) {
   return Object.values(mapa).sort((a, b) => b.totalFinal - a.totalFinal)
 }
 
-function LoteCardEntrada({ grupo, navigate }) {
+function LoteCardEntrada({ grupo, navigate, isInsumo = false }) {
   const [open, setOpen] = useState(false)
   const pct = grupo.totalKg > 0 ? (grupo.saldoKg / grupo.totalKg) * 100 : 0
+  const fmtSaldo = (v) => isInsumo
+    ? Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : `${fmt4(v)} kg`
   return (
     <div className="lote-card">
       <div className="lote-card-header" onClick={() => setOpen(o => !o)}>
@@ -50,9 +53,9 @@ function LoteCardEntrada({ grupo, navigate }) {
         </div>
         <div style={{textAlign:'right'}}>
           <div className="lote-card-kg" style={{color: pct < 10 ? 'var(--danger)' : 'var(--accent-2)'}}>
-            {fmt4(grupo.saldoKg)} kg
+            {fmtSaldo(grupo.saldoKg)}
           </div>
-          <div style={{fontSize:11, color:'var(--text-dim)'}}>saldo de {fmt(grupo.totalKg)} kg</div>
+          <div style={{fontSize:11, color:'var(--text-dim)'}}>saldo de {isInsumo ? fmt(grupo.totalKg) : `${fmt(grupo.totalKg)} kg`}</div>
         </div>
       </div>
       <div className="progress-bar-bg" style={{margin:'10px 0 4px'}}>
@@ -77,7 +80,7 @@ function LoteCardEntrada({ grupo, navigate }) {
               </div>
               <div style={{display:'flex',alignItems:'center',gap:10}}>
                 <span className="td-mono" style={{fontSize:13,color:Number(nf.volume_saldo_kg)<=0.01?'var(--danger)':'var(--accent-2)',fontWeight:600}}>
-                  {fmt4(nf.volume_saldo_kg)} kg
+                  {fmtSaldo(nf.volume_saldo_kg)}
                 </span>
                 <button className="btn btn-ghost btn-sm" onClick={()=>navigate(`/nf/${nf.id}`)}>🔍</button>
               </div>
@@ -155,13 +158,18 @@ export default function DashboardPage() {
       .finally(() => setLoading(false))
   }, [unidadeAtiva, operacaoAtiva])
 
-  const totalEntrada = nfs.reduce((a,n) => a + Number(n.volume_kg), 0)
-  const totalSaldo   = nfs.reduce((a,n) => a + Number(n.volume_saldo_kg), 0)
+  const nfsMP      = nfs.filter(n => (n.tipo_material || 'materia_prima') !== 'insumo')
+  const nfsInsumo  = nfs.filter(n => n.tipo_material === 'insumo')
+  const nfsUnicas  = new Set(nfs.map(n => n.numero_nf)).size
+  const totalEntrada = nfsMP.reduce((a,n) => a + Number(n.volume_kg), 0)
+  const totalSaldo   = nfsMP.reduce((a,n) => a + Number(n.volume_saldo_kg), 0)
+  const totalSaldoInsumo = nfsInsumo.reduce((a,n) => a + Number(n.volume_saldo_kg), 0)
   const totalSaida   = saidas.reduce((a,s) => a + Number(s.volume_abatido_kg), 0)
   const nfsZeradas   = nfs.filter(n => Number(n.volume_saldo_kg) <= 0.01).length
   const nfsVencidas  = nfs.filter(n => statusVencimentoNF(n) === 'vencida')
   const nfsAlerta    = nfs.filter(n => statusVencimentoNF(n) === 'alerta')
-  const lotesEntrada = agruparPorLote(nfs)
+  const lotesEntrada = agruparPorLote(nfsMP)
+  const lotesInsumo  = agruparPorLote(nfsInsumo)
   const lotesSaida   = agruparSaidasPorLote(saidas)
 
   // Detecção de anomalia via IA
@@ -250,12 +258,19 @@ Responda SOMENTE em JSON, sem texto extra, sem markdown:
         <div className="stat-card">
           <div className="stat-label">Total Entrada</div>
           <div className="stat-value">{fmt(totalEntrada)}</div>
-          <div className="stat-unit">kg em {nfs.length} NFs</div>
+          <div className="stat-unit">kg em {nfsUnicas} NF{nfsUnicas !== 1 ? 's' : ''}</div>
         </div>
         <div className="stat-card">
-          <div className="stat-label">Saldo Disponível</div>
+          <div className="stat-label">Saldo — Mat. Prima</div>
           <div className="stat-value" style={{color:'var(--accent)'}}>{fmt(totalSaldo)}</div>
-          <div className="stat-unit">kg em estoque</div>
+          <div className="stat-unit">
+            kg em estoque
+            {nfsInsumo.length > 0 && (
+              <span style={{display:'block', marginTop:2, color:'var(--text-dim)'}}>
+                + {fmt(totalSaldoInsumo)} insumos (saldo)
+              </span>
+            )}
+          </div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Total Saídas</div>
@@ -265,7 +280,7 @@ Responda SOMENTE em JSON, sem texto extra, sem markdown:
         <div className="stat-card">
           <div className="stat-label">NFs Zeradas</div>
           <div className="stat-value" style={{color: nfsZeradas > 0 ? 'var(--warn)' : 'var(--text)'}}>{nfsZeradas}</div>
-          <div className="stat-unit">de {nfs.length} NFs</div>
+          <div className="stat-unit">de {nfsUnicas} NFs</div>
         </div>
       </div>
 
@@ -305,7 +320,7 @@ Responda SOMENTE em JSON, sem texto extra, sem markdown:
                       {vencida ? `Vencida há ${Math.abs(dias)} dia${Math.abs(dias)!==1?'s':''}` : `Vence em ${dias} dia${dias!==1?'s':''}`}
                     </span>
                     <span style={{ fontSize:13, color:'var(--accent-2)', fontWeight:600 }}>
-                      {Number(nf.volume_saldo_kg).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})} kg
+                      {Number(nf.volume_saldo_kg).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}{nf.tipo_material !== 'insumo' ? ' kg' : ''}
                     </span>
                     <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/nf/${nf.id}`)}>🔍</button>
                   </div>
@@ -391,7 +406,7 @@ Responda SOMENTE em JSON, sem texto extra, sem markdown:
                 <tr>
                   <th>NF</th>
                   <th>Lote POY</th>
-                  <th className="td-right">Saldo (kg)</th>
+                  <th className="td-right">Saldo</th>
                   <th className="col-hide-mobile"></th>
                 </tr>
               </thead>
@@ -404,7 +419,7 @@ Responda SOMENTE em JSON, sem texto extra, sem markdown:
                     <td className="td-mono" style={{fontWeight:600}}>{nf.numero_nf}</td>
                     <td className="td-mono">{nf.lote}</td>
                     <td className="td-right td-mono" style={{color: Number(nf.volume_saldo_kg) <= 0.01 ? 'var(--danger)' : 'var(--accent-2)', fontWeight:600}}>
-                      {fmt4(nf.volume_saldo_kg)}
+                      {fmt4(nf.volume_saldo_kg)}{nf.tipo_material !== 'insumo' ? ' kg' : ''}
                     </td>
                     <td className="col-hide-mobile"><button className="btn btn-ghost btn-sm" onClick={() => navigate(`/nf/${nf.id}`)}>🔍</button></td>
                   </tr>
@@ -447,13 +462,25 @@ Responda SOMENTE em JSON, sem texto extra, sem markdown:
           </div>
         </div>
 
-        {/* C — Entradas por Lote */}
-        {lotesEntrada.length > 0 && (
+        {/* C — Entradas por Lote (Matéria Prima) */}
+        {(lotesEntrada.length > 0 || lotesInsumo.length > 0) && (
           <div className="dash-grid-c card" style={{padding:'14px 18px'}}>
-            <div className="dash-section-divider" style={{marginTop:0}}>Entradas por Lote POY</div>
-            <div className="lote-col-stack">
-              {lotesEntrada.map(g => <LoteCardEntrada key={g.lote} grupo={g} navigate={navigate} />)}
-            </div>
+            {lotesEntrada.length > 0 && (
+              <>
+                <div className="dash-section-divider" style={{marginTop:0}}>Entradas por Lote POY</div>
+                <div className="lote-col-stack">
+                  {lotesEntrada.map(g => <LoteCardEntrada key={g.lote} grupo={g} navigate={navigate} isInsumo={false} />)}
+                </div>
+              </>
+            )}
+            {lotesInsumo.length > 0 && (
+              <>
+                <div className="dash-section-divider">Insumos</div>
+                <div className="lote-col-stack">
+                  {lotesInsumo.map(g => <LoteCardEntrada key={g.lote} grupo={g} navigate={navigate} isInsumo={true} />)}
+                </div>
+              </>
+            )}
           </div>
         )}
 

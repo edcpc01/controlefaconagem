@@ -97,19 +97,23 @@ export default function NFDetailPage() {
         <div className="stat-card">
           <div className="stat-label">Volume Total Entrada</div>
           <div className="stat-value">{fmt(nf.volume_kg)}</div>
-          <div className="stat-unit">kg</div>
+          <div className="stat-unit">{nf.tipo_material !== 'insumo' ? 'kg' : 'unid.'}</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Saldo Atual</div>
           <div className="stat-value" style={{color: Number(nf.volume_saldo_kg) <= 0.01 ? 'var(--danger)' : 'var(--accent-2)'}}>
             {fmt(nf.volume_saldo_kg)}
           </div>
-          <div className="stat-unit">{Number(nf.volume_saldo_kg) <= 0.01 ? 'kg — Zerada' : 'kg — disponível'}</div>
+          <div className="stat-unit">
+            {Number(nf.volume_saldo_kg) <= 0.01
+              ? (nf.tipo_material !== 'insumo' ? 'kg — Zerada' : 'Zerada')
+              : (nf.tipo_material !== 'insumo' ? 'kg — disponível' : 'disponível')}
+          </div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Total Consumido</div>
           <div className="stat-value">{fmt(consumido)}</div>
-          <div className="stat-unit">kg em {alocacoes.length} saída{alocacoes.length !== 1 ? 's' : ''}</div>
+          <div className="stat-unit">{nf.tipo_material !== 'insumo' ? 'kg' : 'unid.'} em {alocacoes.length} saída{alocacoes.length !== 1 ? 's' : ''}</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">% Consumido</div>
@@ -138,8 +142,8 @@ export default function NFDetailPage() {
         </div>
         <div>
           <div style={{display:'flex', justifyContent:'space-between', fontSize:12, color:'var(--text-dim)', marginBottom:6}}>
-            <span>Consumido: {fmt(consumido)} kg ({pctConsumo.toFixed(1)}%)</span>
-            <span>Saldo: {fmt(nf.volume_saldo_kg)} kg</span>
+            <span>Consumido: {fmt(consumido)}{nf.tipo_material !== 'insumo' ? ' kg' : ''} ({pctConsumo.toFixed(1)}%)</span>
+            <span>Saldo: {fmt(nf.volume_saldo_kg)}{nf.tipo_material !== 'insumo' ? ' kg' : ''}</span>
           </div>
           <div className="progress-bar-bg">
             <div className="progress-bar-fill" style={{width:`${Math.min(pctConsumo,100)}%`, background: pctConsumo>=100 ? 'var(--danger)' : 'linear-gradient(90deg,var(--accent),var(--accent-2))'}} />

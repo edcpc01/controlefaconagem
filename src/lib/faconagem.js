@@ -172,6 +172,7 @@ export async function criarNFEntrada(payload, usuario, colecoes = COLECOES_PADRA
     volume_kg:       payload.volume_kg,
     volume_saldo_kg: payload.volume_kg,
     valor_unitario:  payload.valor_unitario,
+    tipo_material:   payload.tipo_material || 'materia_prima',
     unidade_id:      payload.unidade_id || '',
     criado_em:       now,
     atualizado_em:   now,
@@ -209,6 +210,7 @@ export async function editarNFEntrada(id, payload, usuario, colecoes = COLECOES_
     volume_kg:       payload.volume_kg,
     volume_saldo_kg: novoSaldo,
     valor_unitario:  payload.valor_unitario,
+    tipo_material:   payload.tipo_material || 'materia_prima',
     unidade_id:      payload.unidade_id || '',
     atualizado_em:   now,
   })
