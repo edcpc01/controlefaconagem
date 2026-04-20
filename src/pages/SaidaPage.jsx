@@ -522,11 +522,12 @@ export default function SaidaPage() {
   }, [form.codigo_material])
 
   const handlePreConfirm = async () => {
-    if (!form.romaneio_microdata || !form.codigo_material || !form.lote_poy || !form.tipo_saida || !form.volume_liquido_kg) {
+    const isInsumoSaida = form.tipo_saida === 'insumo'
+    if (!form.romaneio_microdata || !form.codigo_material || (!isInsumoSaida && !form.lote_poy) || !form.tipo_saida || !form.volume_liquido_kg) {
       toast('Preencha os campos obrigatórios (*).', 'error'); return
     }
     if (nfsFiltradas.length === 0) {
-      toast(`Nenhuma NF encontrada para o material "${form.codigo_material}" / lote "${form.lote_poy}" nesta unidade.`, 'error'); return
+      toast(`Nenhuma NF encontrada para o material "${form.codigo_material}"${form.lote_poy ? ` / lote "${form.lote_poy}"` : ''} nesta unidade.`, 'error'); return
     }
     if (saldoInsuficiente) {
       toast(`Saldo insuficiente! Disponível para este material/lote: ${fmt(totalSaldo)} kg`, 'error'); return
@@ -788,8 +789,8 @@ export default function SaidaPage() {
               value={form.codigo_material} onChange={e => set('codigo_material', e.target.value)} />
           </div>
           <div className="form-group">
-            <label className="form-label">Lote POY *</label>
-            <input type="text" className="form-input" placeholder="Ex: 5327"
+            <label className="form-label">{form.tipo_saida === 'insumo' ? 'Lote POY' : 'Lote POY *'}</label>
+            <input type="text" className="form-input" placeholder={form.tipo_saida === 'insumo' ? 'Opcional' : 'Ex: 5327'}
               value={form.lote_poy} onChange={e => set('lote_poy', e.target.value)} />
           </div>
           <div className="form-group">
@@ -804,7 +805,7 @@ export default function SaidaPage() {
         {/* LINHA 2 — Volume + opcionais */}
         <div className="form-grid-4">
           <div className="form-group">
-            <label className="form-label">Volume Líquido (kg) *</label>
+            <label className="form-label">{form.tipo_saida === 'insumo' ? 'Volume / Qtd *' : 'Volume Líquido (kg) *'}</label>
             <input type="number" step="0.001" min="0" className="form-input" placeholder="0,000"
               value={form.volume_liquido_kg} onChange={e => set('volume_liquido_kg', e.target.value)} />
           </div>
@@ -838,8 +839,8 @@ export default function SaidaPage() {
             </span>
             <span style={{fontWeight:700, fontSize:14,
               color: saldoInsuficiente ? 'var(--danger)' : 'var(--accent-2)'}}>
-              {fmt(totalSaldo)} kg
-              {saldoInsuficiente && volumeAbatido > 0 && ` — faltam ${fmt(volumeAbatido - totalSaldo)} kg`}
+              {fmt(totalSaldo)}{form.tipo_saida !== 'insumo' ? ' kg' : ''}
+              {saldoInsuficiente && volumeAbatido > 0 && ` — faltam ${fmt(volumeAbatido - totalSaldo)}${form.tipo_saida !== 'insumo' ? ' kg' : ''}`}
             </span>
           </div>
         )}
@@ -848,8 +849,8 @@ export default function SaidaPage() {
         {volumeLiq > 0 && form.tipo_saida && (
           <div className="abatimento-box" style={{marginTop:16}}>
             <div className="abatimento-row">
-              <span className="abatimento-label">Volume Líquido Informado</span>
-              <span className="abatimento-value">{fmt(volumeLiq)} kg</span>
+              <span className="abatimento-label">{form.tipo_saida === 'insumo' ? 'Volume / Qtd Informado' : 'Volume Líquido Informado'}</span>
+              <span className="abatimento-value">{fmt(volumeLiq)}{form.tipo_saida !== 'insumo' ? ' kg' : ''}</span>
             </div>
             {temAbatimento && (
               <div className="abatimento-row">
@@ -910,7 +911,7 @@ export default function SaidaPage() {
                 <span className="abatimento-label" style={{fontWeight:700}}>
                   Volume a Debitar do Estoque
                 </span>
-                <span className="abatimento-value highlight">{fmt(volumeAbatido)} kg</span>
+                <span className="abatimento-value highlight">{fmt(volumeAbatido)}{form.tipo_saida !== 'insumo' ? ' kg' : ''}</span>
               </div>
             </div>
             {saldoInsuficiente && (
