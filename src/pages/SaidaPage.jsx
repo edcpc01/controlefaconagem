@@ -33,7 +33,7 @@ const EMPTY_FORM = {
 }
 
 function tipoBadge(tipo) {
-  const map = { faturamento:'badge-blue', sucata:'badge-danger', estopa:'badge-warn', dev_qualidade:'badge-green', dev_processo:'badge-green', dev_final_campanha:'badge-green' }
+  const map = { faturamento:'badge-blue', sucata:'badge-danger', estopa:'badge-warn', dev_qualidade:'badge-green', dev_processo:'badge-green', dev_final_campanha:'badge-green', insumo:'badge-blue' }
   const label = TIPOS_SAIDA.find(t => t.value === tipo)?.label || tipo
   return <span className={`badge ${map[tipo] || 'badge-blue'}`}>{label}</span>
 }

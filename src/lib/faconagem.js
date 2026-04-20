@@ -33,6 +33,7 @@ export const TIPOS_SAIDA = [
   { value: 'dev_final_campanha', label: 'Devolução Final de Campanha' },
   { value: 'sucata',             label: 'Sucata' },
   { value: 'estopa',             label: 'Estopa' },
+  { value: 'insumo',             label: 'Saída de Insumo' },
 ]
 
 export const PERCENTUAL_ABATIMENTO = 0.015
