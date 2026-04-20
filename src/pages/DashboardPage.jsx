@@ -44,12 +44,13 @@ function LoteCardEntrada({ grupo, navigate, isInsumo = false }) {
   const fmtSaldo = (v) => isInsumo
     ? Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
     : `${fmt4(v)} kg`
+  const nfsUnicas = new Set(grupo.nfs.map(n => n.numero_nf)).size
   return (
     <div className="lote-card">
       <div className="lote-card-header" onClick={() => setOpen(o => !o)}>
         <div>
           <div className="lote-card-title">Lote <span style={{color:'var(--accent)'}}>{grupo.lote}</span></div>
-          <div className="lote-card-sub">{grupo.nfs.length} NF{grupo.nfs.length !== 1 ? 's' : ''}</div>
+          <div className="lote-card-sub">{nfsUnicas} NF{nfsUnicas !== 1 ? 's' : ''}</div>
         </div>
         <div style={{textAlign:'right'}}>
           <div className="lote-card-kg" style={{color: pct < 10 ? 'var(--danger)' : 'var(--accent-2)'}}>
@@ -89,7 +90,7 @@ function LoteCardEntrada({ grupo, navigate, isInsumo = false }) {
         </div>
       )}
       <button className="lote-expand-btn" onClick={()=>setOpen(o=>!o)}>
-        {open ? '▲ Recolher' : `▼ Ver ${grupo.nfs.length} NF${grupo.nfs.length!==1?'s':''}`}
+        {open ? '▲ Recolher' : `▼ Ver ${nfsUnicas} NF${nfsUnicas!==1?'s':''}`}
       </button>
     </div>
   )
