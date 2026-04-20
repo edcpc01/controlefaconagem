@@ -986,7 +986,6 @@ export function gerarMultiSaidaPDF(dados, config = {}) {
 
   pdoc.save(`romaneio_multi_${dados.romaneio_microdata}_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`)
 }
-}
 
 
 
