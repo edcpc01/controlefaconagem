@@ -22,10 +22,10 @@ export default async function handler(req, res) {
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) return res.status(500).json({ error: 'OPENROUTER_API_KEY não configurada na Vercel.' })
 
-  const { base64Data, pdfText: pdfTextDireto, operacao } = req.body
+  const { base64Data, pdfText: pdfTextDireto, imageBase64, operacao } = req.body
 
-  if (!base64Data && !pdfTextDireto) {
-    return res.status(400).json({ error: 'Envie base64Data ou pdfText.' })
+  if (!base64Data && !pdfTextDireto && !imageBase64) {
+    return res.status(400).json({ error: 'Envie base64Data, pdfText ou imageBase64.' })
   }
 
   let textoNF = pdfTextDireto || ''
@@ -42,11 +42,48 @@ export default async function handler(req, res) {
   }
 
   textoNF = textoNF.trim()
-  if (!textoNF || textoNF.length < 10) {
+  const usarVision = (!textoNF || textoNF.length < 80) && imageBase64
+
+  if (!usarVision && textoNF.length < 10) {
     return res.status(422).json({ error: 'Não foi possível extrair texto do PDF.' })
   }
 
+  const loteDigitos = operacao === 'nilit' ? 5 : 4
+
+  const promptTexto = `Extraia os dados desta Nota Fiscal. A NF pode conter UM ou MAIS itens/produtos.
+Esta é uma operação primariamente do tipo: ${operacao || 'desconhecida'}.
+
+Retorne SOMENTE este JSON (sem markdown, sem texto extra):
+{
+  "numero_nf": "número da NF sem zeros à esquerda",
+  "data_emissao": "data de emissão no formato YYYY-MM-DD",
+  "itens": [
+    {
+      "codigo_material": "código do produto (campo COD. PROD. — NÃO é o NCM que tem 8 dígitos). Ex: 152504",
+      "descricao_material": "descrição completa do produto/serviço",
+      "lote": "apenas os dígitos numéricos do lote POY (${loteDigitos} dígitos para esta operação). Se for insumo/consumo sem lote, retorne ''",
+      "volume_kg": quantidade numérica (campo QTD ou QUANTID.),
+      "valor_unitario": valor unitário como número decimal (campo V. UNITÁRIO)
+    }
+  ]
+}
+
+REGRAS:
+- "numero_nf": sem zeros à esquerda (ex: "51550" não "000051550")
+- "codigo_material": campo COD. PROD. da tabela (ex: 152504, 137157). NUNCA usar NCM/SH (8 dígitos).
+- "lote": somente dígitos, ${loteDigitos} dígitos (ex: POY-100/34-37553 → "37553"). Insumos → "".
+- "volume_kg": valor numérico da quantidade (KG, PC, EA, etc — use o número sempre).
+- "valor_unitario": V. UNITÁRIO da tabela.
+- Múltiplos produtos → retorne todos no array "itens".`
+
   try {
+    const userContent = usarVision
+      ? [
+          { type: 'text', text: promptTexto },
+          { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageBase64}` } },
+        ]
+      : `${promptTexto}\n\nTEXTO DA NOTA FISCAL:\n${textoNF.slice(0, 5000)}`
+
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -64,37 +101,7 @@ export default async function handler(req, res) {
             role: 'system',
             content: 'Você é um extrator de dados de Notas Fiscais brasileiras. Retorne APENAS JSON válido, sem markdown, sem texto adicional.'
           },
-          {
-            role: 'user',
-            content: `Extraia os dados desta Nota Fiscal. A NF pode conter UM ou MAIS itens/produtos.
-Esta é uma operação primariamente do tipo: ${operacao || 'desconhecida'}.
-
-Retorne SOMENTE este JSON:
-{
-  "numero_nf": "número da NF sem zeros à esquerda",
-  "data_emissao": "data de emissão no formato YYYY-MM-DD",
-  "itens": [
-    {
-      "codigo_material": "código do produto (campo COD. da tabela — NÃO é o NCM que tem 8 dígitos). Ex: 140911",
-      "descricao_material": "descrição completa do produto/serviço",
-      "lote": "apenas os dígitos numéricos do lote (para matéria prima, ex POY, geralmente 4 ou 5 dígitos). Se for insumo (ex: filme stretch, tubete, estopa), não há lote, então deixe vazio: ''",
-      "volume_kg": quantidade em kg como número decimal,
-      "valor_unitario": valor unitário como número decimal
-    }
-  ]
-}
-
-REGRAS IMPORTANTES:
-- "numero_nf": número sem zeros à esquerda (ex: "100394" não "000100394")
-- "codigo_material": campo COD. da tabela de produtos (ex: 98673, 140019, 142450). NUNCA confundir com NCM/SH (8 dígitos como 34024200).
-- "lote": Extraia apenas dígitos. Para operação Nilit e matéria prima (POY), o lote tem 5 dígitos (ex: descrição "POY-100/34 -37553" -> lote "37553"). Para operação Rhodia, costuma ter 4 dígitos. Se for material de insumo/consumo, SEMPRE retorne "".
-- "volume_kg": campo QUANTID. em KG. (Atenção para insumos, se a unidade não for KG mas sim PC, EA, etc, lance no volume_kg o valor numérico mesmo assim).
-- "valor_unitario": campo VALOR UNITÁRIO.
-- Se a NF tem múltiplos produtos, retorne todos no array "itens".
-
-TEXTO DA NOTA FISCAL:
-${textoNF.slice(0, 5000)}`
-          }
+          { role: 'user', content: userContent }
         ]
       })
     })
@@ -116,8 +123,6 @@ ${textoNF.slice(0, 5000)}`
       if (!match) return res.status(422).json({ error: 'JSON inválido.', raw: clean.slice(0, 200) })
       parsed = JSON.parse(match[0])
     }
-
-    const loteDigitos = (operacao === 'nilit') ? 5 : 4
 
     // Normaliza: se a IA retornou formato antigo (sem itens), converte
     if (!parsed.itens) {

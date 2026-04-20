@@ -259,16 +259,14 @@ export async function buscarAlocacoesPorNF(nfId, colecoes = COLECOES_PADRAO) {
 // EXTRAÇÃO DE DADOS DA NF PDF (via Claude API)
 // ─────────────────────────────────────────────────────────────────
 
-// Extrai texto do PDF usando pdfjs-dist (roda no browser, sem CORS)
+// Extrai texto e (se digitalizado) imagem do PDF via pdfjs-dist (roda no browser)
 async function extrairTextoPDF(base64Data) {
-  // Importação dinâmica para não aumentar o bundle inicial
   const pdfjsLib = await import('pdfjs-dist')
-  // Worker inline via CDN — evita problema de configuração do Vite
   pdfjsLib.GlobalWorkerOptions.workerSrc =
     `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
 
-  const raw      = atob(base64Data)
-  const uint8    = new Uint8Array(raw.length)
+  const raw   = atob(base64Data)
+  const uint8 = new Uint8Array(raw.length)
   for (let i = 0; i < raw.length; i++) uint8[i] = raw.charCodeAt(i)
 
   const pdf   = await pdfjsLib.getDocument({ data: uint8 }).promise
@@ -278,17 +276,32 @@ async function extrairTextoPDF(base64Data) {
     const content = await page.getTextContent()
     texto += content.items.map(i => i.str).join(' ') + '\n'
   }
-  return texto
+
+  // Se texto insuficiente (PDF digitalizado/imagem), renderiza página 1 como JPEG
+  let imageBase64 = null
+  if (texto.trim().length < 80) {
+    try {
+      const page     = await pdf.getPage(1)
+      const viewport = page.getViewport({ scale: 2.0 })
+      const canvas   = document.createElement('canvas')
+      canvas.width   = viewport.width
+      canvas.height  = viewport.height
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+      imageBase64 = canvas.toDataURL('image/jpeg', 0.88).split(',')[1]
+    } catch (_) {}
+  }
+
+  return { texto, imageBase64 }
 }
 
-// Envia texto ao proxy Vercel → OpenRouter — agora retorna { numero_nf, data_emissao, itens: [...] }
+// Envia texto (ou imagem) ao proxy Vercel → OpenRouter → retorna { numero_nf, data_emissao, itens }
 export async function extrairDadosNFdoPDF(base64Data, operacaoAtiva) {
-  const pdfText = await extrairTextoPDF(base64Data)
+  const { texto: pdfText, imageBase64 } = await extrairTextoPDF(base64Data)
 
   const response = await fetch('/api/extract-nf', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pdfText, operacao: operacaoAtiva })
+    body: JSON.stringify({ pdfText, imageBase64, operacao: operacaoAtiva })
   })
   if (!response.ok) {
     const err = await response.json().catch(() => ({}))
