@@ -896,6 +896,98 @@ export function gerarRomaneioBase64(saida, alocacoes, config = {}, alocacoesComp
   return pdoc.output('datauristring').split(',')[1]
 }
 
+// ─────────────────────────────────────────────────────────────────
+// ROMANEIO MULTI-SAÍDA PDF (1 romaneio com múltiplos materiais)
+// ─────────────────────────────────────────────────────────────────
+
+export function gerarMultiSaidaPDF(dados, config = {}) {
+  // dados: { romaneio_microdata, tipo_saida, lote_acabado, itens, criado_em }
+  // itens: [{ codigo_material, lote_poy, descricao_material, volume_liquido_kg, volume_abatido_kg }]
+  const pdoc  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const W     = 210
+  const DARK  = [15, 40, 80]
+  const MED   = [26, 80, 150]
+  const LIGHT = [220, 235, 255]
+  const WHITE = [255, 255, 255]
+  const GRAY  = [80, 80, 80]
+
+  const tipoLbl  = TIPOS_SAIDA.find(t => t.value === dados.tipo_saida)?.label || dados.tipo_saida
+  const temAbat  = TIPOS_COM_ABATIMENTO.includes(dados.tipo_saida)
+  const fmtVol   = n => n != null ? Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'
+  const totalLiq = dados.itens.reduce((a, i) => a + Number(i.volume_liquido_kg || 0), 0)
+  const totalFin = dados.itens.reduce((a, i) => a + Number(i.volume_abatido_kg || i.volume_liquido_kg || 0), 0)
+
+  // ── Cabeçalho ──
+  const headerH = 36
+  pdoc.setFillColor(...DARK)
+  pdoc.rect(0, 0, W, headerH, 'F')
+  if (config.logoBase64) {
+    try { pdoc.addImage(config.logoBase64, 'PNG', 14, 5, 26, 26) } catch (_) {}
+  }
+  pdoc.setTextColor(...WHITE)
+  pdoc.setFontSize(16); pdoc.setFont('helvetica', 'bold')
+  pdoc.text('CORRADI MAZZER — FAÇONAGEM', W / 2, 13, { align: 'center' })
+  pdoc.setFontSize(10); pdoc.setFont('helvetica', 'normal')
+  pdoc.text('ROMANEIO DE SAÍDA MÚLTIPLA', W / 2, 21, { align: 'center' })
+  pdoc.setFontSize(8)
+  pdoc.text(`Emitido: ${format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}`, W / 2, 29, { align: 'center' })
+
+  let y = headerH + 8
+
+  // ── Box cabeçalho romaneio ──
+  pdoc.setFillColor(...LIGHT)
+  pdoc.roundedRect(14, y, W - 28, 28, 3, 3, 'F')
+  const linha = (lbl, val, cx, cy) => {
+    pdoc.setFont('helvetica', 'bold'); pdoc.setFontSize(8); pdoc.setTextColor(...GRAY)
+    pdoc.text(lbl, cx, cy)
+    pdoc.setFont('helvetica', 'normal'); pdoc.setTextColor(...DARK)
+    pdoc.text(String(val ?? '—'), cx, cy + 5)
+  }
+  const col1 = 20, col2 = W / 2 + 4
+  y += 7
+  linha('Romaneio Microdata', dados.romaneio_microdata, col1, y)
+  linha('Tipo de Saída',      tipoLbl,                  col2, y)
+  y += 14
+  linha('Lote Acabado', dados.lote_acabado || '—',      col1, y)
+  linha('Data/Hora',    dados.criado_em
+    ? format(new Date(dados.criado_em), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })
+    : format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR }), col2, y)
+  y += 14
+
+  // ── Tabela de itens ──
+  autoTable(pdoc, {
+    startY: y,
+    margin: { left: 14, right: 14 },
+    head: [['Cód. Material', 'Lote POY', 'Descrição', 'Volume Líq.', temAbat ? 'Vol. Debitado' : 'Volume']],
+    body: dados.itens.map(it => [
+      it.codigo_material || '—',
+      it.lote_poy || '—',
+      it.descricao_material || '—',
+      fmtVol(it.volume_liquido_kg),
+      fmtVol(it.volume_abatido_kg ?? it.volume_liquido_kg),
+    ]),
+    foot: [[
+      { content: `Total — ${dados.itens.length} item(ns)`, colSpan: 3, styles: { fontStyle: 'bold' } },
+      { content: fmtVol(totalLiq), styles: { fontStyle: 'bold', halign: 'right' } },
+      { content: fmtVol(totalFin), styles: { fontStyle: 'bold', halign: 'right', textColor: MED } },
+    ]],
+    styles:     { fontSize: 9, cellPadding: 4 },
+    headStyles: { fillColor: DARK, textColor: WHITE, fontStyle: 'bold' },
+    footStyles: { fillColor: LIGHT, textColor: DARK },
+    alternateRowStyles: { fillColor: [245, 249, 255] },
+    columnStyles: {
+      0: { fontStyle: 'bold', cellWidth: 28 },
+      1: { cellWidth: 22 },
+      2: { cellWidth: 'auto' },
+      3: { halign: 'right', cellWidth: 28 },
+      4: { halign: 'right', cellWidth: 30 },
+    },
+  })
+
+  pdoc.save(`romaneio_multi_${dados.romaneio_microdata}_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`)
+}
+}
+
 
 
 // ─────────────────────────────────────────────────────────────────

@@ -1,9 +1,9 @@
-import { useEffect, useState, useMemo, useCallback } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import {
   listarSaidas, criarSaida, deletarSaida, listarNFsEntrada, previewFIFO,
   TIPOS_SAIDA, TIPOS_COM_ABATIMENTO,
   calcularVolumeAbatido, getPercentualAbatimento, MATERIAL_ESPECIAL_135612,
-  gerarRomaneioPDF, gerarRomaneioBase64, exportarExcel, carregarConfig
+  gerarRomaneioPDF, gerarRomaneioBase64, gerarMultiSaidaPDF, exportarExcel, carregarConfig
 } from '../lib/faconagem'
 import { useAuth } from '../lib/AuthContext'
 import { useUser } from '../lib/UserContext'
@@ -342,88 +342,92 @@ export default function SaidaPage() {
   const [offlineQueue, setOfflineQueue] = useState(getQueue())
   const [sincronizando, setSincronizando] = useState(false)
 
-  // Modo lote — nova implementação
-  const [aba, setAba]                     = useState('simples') // 'simples' | 'lote'
-  const [loteForm, setLoteForm]           = useState({ tipo_saida: '', lote_poy: '', codigo_material: '', lote_acabado: '' })
-  const [loteLinhas, setLoteLinhas]       = useState([]) // [{nf, romaneio, volume_liquido_kg, incluir}]
-  const [loteLoading, setLoteLoading]     = useState(false)
-  const [loteResultados, setLoteResultados] = useState([]) // romaneios gerados
+  // ── Multi-saídas (1 romaneio, N materiais) ───────────────────────
+  const [aba, setAba]             = useState('simples') // 'simples' | 'multi'
+  const [multiForm, setMultiForm] = useState({ romaneio_microdata: '', tipo_saida: '', lote_acabado: '' })
+  const [multiLinhas, setMultiLinhas] = useState([{ _id: 0, codigo_material: '', lote_poy: '', volume: '', incluir: true }])
+  const [multiLoading, setMultiLoading] = useState(false)
+  const [multiResultado, setMultiResultado] = useState(null)
+  const multiNextId = useRef(1)
 
-  // Lotes únicos disponíveis nas NFs com saldo
-  const lotesDisponiveis = useMemo(() => {
-    const s = new Set(nfs.filter(n => Number(n.volume_saldo_kg) > 0.01).map(n => n.lote || ''))
-    return [...s].filter(Boolean).sort()
-  }, [nfs])
+  const addMultiLinha = () =>
+    setMultiLinhas(ls => [...ls, { _id: multiNextId.current++, codigo_material: '', lote_poy: '', volume: '', incluir: true }])
+  const removeMultiLinha = (id) => setMultiLinhas(ls => ls.filter(l => l._id !== id))
+  const setMultiLinha = (id, campo, valor) =>
+    setMultiLinhas(ls => ls.map(l => l._id === id ? {...l, [campo]: valor} : l))
 
-  // Carrega NFs do lote selecionado
-  useEffect(() => {
-    if (!loteForm.lote_poy) { setLoteLinhas([]); return }
-    const nfsDolote = nfs.filter(n => {
-      const loteNF = String(n.lote || '').substring(0, 4)
-      const loteSel = String(loteForm.lote_poy).substring(0, 4)
-      if (loteNF !== loteSel) return false
-      if (loteForm.codigo_material && n.codigo_material !== loteForm.codigo_material) return false
-      return Number(n.volume_saldo_kg) > 0.01
-    })
-    setLoteLinhas(nfsDolote.map(nf => ({
-      nf,
-      romaneio: '',
-      volume_liquido_kg: '',
-      incluir: true,
-    })))
-  }, [loteForm.lote_poy, loteForm.codigo_material, nfs])
+  const getSaldoMultiLinha = useCallback((linha) => {
+    return nfs.filter(nf => {
+      if (Number(nf.volume_saldo_kg) <= 0.001) return false
+      if (linha.codigo_material && nf.codigo_material !== linha.codigo_material) return false
+      if (linha.lote_poy) {
+        const lNF  = String(nf.lote || '').substring(0, loteDigitos)
+        const lLin = String(linha.lote_poy).substring(0, loteDigitos)
+        if (lNF !== lLin) return false
+      }
+      if (unidadeAtiva && (nf.unidade_id || '') !== unidadeAtiva) return false
+      return true
+    }).reduce((a, n) => a + Number(n.volume_saldo_kg), 0)
+  }, [nfs, loteDigitos, unidadeAtiva])
 
-  const setLinha = (idx, campo, valor) => {
-    setLoteLinhas(ls => ls.map((l, i) => i === idx ? { ...l, [campo]: valor } : l))
+  const resetMulti = () => {
+    setMultiForm({ romaneio_microdata: '', tipo_saida: '', lote_acabado: '' })
+    setMultiLinhas([{ _id: 0, codigo_material: '', lote_poy: '', volume: '', incluir: true }])
+    setMultiResultado(null)
+    multiNextId.current = 1
   }
 
-  const handleGerarLote = async () => {
-    const linhasAtivas = loteLinhas.filter(l => l.incluir && Number(l.volume_liquido_kg) > 0)
-    if (!loteForm.tipo_saida) { toast('Selecione o tipo de saída.', 'error'); return }
-    if (linhasAtivas.length === 0) { toast('Nenhuma linha com volume preenchido.', 'error'); return }
-    const semRomaneio = linhasAtivas.filter(l => !l.romaneio.trim())
-    if (semRomaneio.length > 0) { toast('Preencha o número do romaneio em todas as linhas incluídas.', 'error'); return }
+  const handleGerarMulti = async () => {
+    if (!multiForm.romaneio_microdata.trim()) { toast('Informe o número do romaneio.', 'error'); return }
+    if (!multiForm.tipo_saida) { toast('Selecione o tipo de saída.', 'error'); return }
+    const ativas = multiLinhas.filter(l => l.incluir && l.codigo_material.trim() && parseFloat(l.volume) > 0)
+    if (ativas.length === 0) { toast('Nenhuma linha ativa com material e volume preenchidos.', 'error'); return }
+    for (const l of ativas) {
+      const saldo    = getSaldoMultiLinha(l)
+      const volFinal = calcularVolumeAbatido(parseFloat(l.volume), multiForm.tipo_saida, l.codigo_material, percentualBase)
+      if (volFinal > saldo + 0.01) {
+        toast(`Saldo insuficiente: Mat. ${l.codigo_material}${l.lote_poy ? ` / lote ${l.lote_poy}` : ''}.`, 'error'); return
+      }
+    }
 
-    setLoteLoading(true)
-    const resultados = []
+    setMultiLoading(true)
+    const resultItens = []
     const erros = []
 
-    for (const linha of linhasAtivas) {
-      const volLiq = parseFloat(linha.volume_liquido_kg)
-      const payload = {
-        romaneio_microdata: linha.romaneio.trim(),
-        codigo_material:    linha.nf.codigo_material || '',
-        lote_poy:           loteForm.lote_poy,
-        lote_acabado:       loteForm.lote_acabado.trim() || '',
-        tipo_saida:         loteForm.tipo_saida,
-        volume_liquido_kg:  volLiq,
-        volume_bruto_kg:    null,
-        quantidade:         null,
-        unidade_id:         unidadeAtiva || '',
-      }
+    for (const l of ativas) {
+      const volLiq = parseFloat(l.volume)
       try {
-        const res = await criarSaida(payload, user, colecoes)
-        resultados.push({ romaneio: linha.romaneio, nf: linha.nf.numero_nf, volLiq, res })
+        const res = await criarSaida({
+          romaneio_microdata: multiForm.romaneio_microdata.trim(),
+          codigo_material:    l.codigo_material.trim(),
+          lote_poy:           l.lote_poy?.trim() || '',
+          lote_acabado:       multiForm.lote_acabado.trim() || '',
+          tipo_saida:         multiForm.tipo_saida,
+          volume_liquido_kg:  volLiq,
+          volume_bruto_kg:    null,
+          quantidade:         null,
+          unidade_id:         unidadeAtiva || '',
+          percentual_base:    percentualBase,
+        }, user, colecoes)
+        resultItens.push({
+          codigo_material:   l.codigo_material.trim(),
+          lote_poy:          l.lote_poy?.trim() || '',
+          descricao_material: nfs.find(n => n.codigo_material === l.codigo_material.trim())?.descricao_material || '',
+          volume_liquido_kg: volLiq,
+          volume_abatido_kg: res.saida.volume_abatido_kg,
+        })
       } catch (e) {
-        erros.push({ romaneio: linha.romaneio, erro: e.message })
+        erros.push({ material: l.codigo_material, erro: e.message })
       }
     }
 
-    setLoteLoading(false)
-    setLoteResultados(resultados)
-    if (resultados.length > 0) {
-      toast(`✅ ${resultados.length} romaneio(s) gerado(s) com sucesso!`)
+    setMultiLoading(false)
+    if (resultItens.length > 0) {
+      setMultiResultado({ itens: resultItens, erros })
+      toast(`✅ ${resultItens.length} baixa(s) no romaneio ${multiForm.romaneio_microdata}!`)
       load()
     }
-    if (erros.length > 0) {
-      toast(`⚠️ ${erros.length} erro(s): ${erros.map(e => e.romaneio).join(', ')}`, 'error')
-    }
-  }
-
-  const resetLote = () => {
-    setLoteForm({ tipo_saida: '', lote_poy: '', codigo_material: '', lote_acabado: '' })
-    setLoteLinhas([])
-    setLoteResultados([])
+    if (erros.length > 0) toast(`⚠️ ${erros.length} erro(s): ${erros.map(e => e.material).join(', ')}`, 'error')
   }
 
   // Filtros
@@ -761,7 +765,7 @@ export default function SaidaPage() {
       ) : (
       <>
       <div style={{display:'flex', gap:0, marginBottom:20, borderBottom:'1px solid var(--border)'}}>
-        {[{k:'simples', label:'➕ Saída Individual'}, {k:'lote', label:'📦 Saída em Lote'}].map(t => (
+        {[{k:'simples', label:'➕ Saída Individual'}, {k:'multi', label:'📋 Multi-saídas'}].map(t => (
           <button key={t.k} onClick={() => setAba(t.k)} style={{
             padding:'10px 20px', background:'none', border:'none', cursor:'pointer', fontSize:13, fontWeight:600,
             color: aba === t.k ? 'var(--accent)' : 'var(--text-dim)',
@@ -950,141 +954,120 @@ export default function SaidaPage() {
       </div>
       )} {/* fim aba simples */}
 
-      {/* ── ABA: SAÍDA EM LOTE ── */}
-      {aba === 'lote' && (
+      {/* ── ABA: MULTI-SAÍDAS ── */}
+      {aba === 'multi' && (
         <div className="card" style={{marginBottom:24}}>
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16}}>
-            <div className="card-title" style={{margin:0}}>📦 Saída em Lote — múltiplos romaneios</div>
-            <button className="btn btn-ghost btn-sm" onClick={resetLote}>↺ Limpar</button>
+            <div className="card-title" style={{margin:0}}>📋 Multi-saídas — 1 romaneio, N materiais</div>
+            <button className="btn btn-ghost btn-sm" onClick={resetMulti}>↺ Limpar</button>
           </div>
 
-          {/* Configuração do lote */}
+          {/* Cabeçalho do romaneio */}
           <div className="form-grid-4" style={{marginBottom:16}}>
             <div className="form-group">
-              <label className="form-label">Lote POY *</label>
-              <select className="form-select" value={loteForm.lote_poy}
-                onChange={e => setLoteForm(f => ({...f, lote_poy: e.target.value}))}>
-                <option value="">Selecione o lote...</option>
-                {lotesDisponiveis.map(l => <option key={l} value={l}>{l}</option>)}
-              </select>
+              <label className="form-label">Romaneio Microdata *</label>
+              <input className="form-input" placeholder="Ex: 122041"
+                value={multiForm.romaneio_microdata}
+                onChange={e => setMultiForm(f => ({...f, romaneio_microdata: e.target.value}))} />
             </div>
             <div className="form-group">
               <label className="form-label">Tipo de Saída *</label>
-              <select className="form-select" value={loteForm.tipo_saida}
-                onChange={e => setLoteForm(f => ({...f, tipo_saida: e.target.value}))}>
-                <option value="">Selecione o tipo...</option>
+              <select className="form-select" value={multiForm.tipo_saida}
+                onChange={e => setMultiForm(f => ({...f, tipo_saida: e.target.value}))}>
+                <option value="">Selecione...</option>
                 {TIPOS_SAIDA.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
               </select>
             </div>
             <div className="form-group">
               <label className="form-label">Lote Acabado</label>
-              <input className="form-input" placeholder="Opcional" value={loteForm.lote_acabado}
-                onChange={e => setLoteForm(f => ({...f, lote_acabado: e.target.value}))} />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Filtrar Cód. Material</label>
-              <input className="form-input" placeholder="Ex: 140911" value={loteForm.codigo_material}
-                onChange={e => setLoteForm(f => ({...f, codigo_material: e.target.value}))} />
+              <input className="form-input" placeholder="Opcional"
+                value={multiForm.lote_acabado}
+                onChange={e => setMultiForm(f => ({...f, lote_acabado: e.target.value}))} />
             </div>
           </div>
 
-          {/* Aviso abatimento */}
-          {loteForm.tipo_saida && TIPOS_COM_ABATIMENTO.includes(loteForm.tipo_saida) && (
+          {multiForm.tipo_saida && TIPOS_COM_ABATIMENTO.includes(multiForm.tipo_saida) && (
             <div style={{background:'rgba(255,180,0,0.08)', border:'1px solid var(--warn)', borderRadius:8, padding:'8px 12px', fontSize:12, color:'var(--warn)', marginBottom:14}}>
-              ⚠️ Abatimento de {loteForm.codigo_material === MATERIAL_ESPECIAL_135612.codigo ? '3,5%' : '1,5%'} será aplicado automaticamente em todos os romaneios deste lote.
+              ⚠️ Abatimento de {percentualBase != null ? `${(percentualBase*100).toFixed(1).replace('.',',')}%` : '1,5%'} será aplicado em cada item.
             </div>
           )}
 
-          {/* Sem lote selecionado */}
-          {!loteForm.lote_poy && (
-            <div className="empty" style={{padding:'30px 0'}}>
-              <div className="empty-icon">📦</div>
-              <div className="empty-text">Selecione o lote POY para carregar as NFs disponíveis</div>
-            </div>
-          )}
-
-          {/* Linhas de NFs */}
-          {loteLinhas.length === 0 && loteForm.lote_poy && (
-            <div className="empty" style={{padding:'20px 0'}}>
-              <div className="empty-icon">🔍</div>
-              <div className="empty-text">Nenhuma NF com saldo disponível para este lote</div>
-            </div>
-          )}
-
-          {loteLinhas.length > 0 && (
+          {/* Tabela de linhas */}
+          {!multiResultado && (
             <>
-              <div style={{overflowX:'auto', marginBottom:16}}>
+              <div style={{overflowX:'auto', marginBottom:12}}>
                 <table style={{width:'100%', borderCollapse:'collapse', fontSize:13}}>
                   <thead>
                     <tr style={{background:'rgba(255,255,255,0.04)'}}>
-                      <th style={{padding:'8px 10px', textAlign:'center', width:36}}>
-                        <input type="checkbox" checked={loteLinhas.every(l => l.incluir)}
-                          onChange={e => setLoteLinhas(ls => ls.map(l => ({...l, incluir: e.target.checked})))} />
+                      <th style={{padding:'8px 10px', width:36, textAlign:'center'}}>
+                        <input type="checkbox"
+                          checked={multiLinhas.every(l => l.incluir)}
+                          onChange={e => setMultiLinhas(ls => ls.map(l => ({...l, incluir: e.target.checked})))} />
                       </th>
-                      <th style={{padding:'8px 10px', textAlign:'left', color:'var(--text-dim)', fontWeight:600}}>NF</th>
-                      <th style={{padding:'8px 10px', textAlign:'left', color:'var(--text-dim)', fontWeight:600}}>Emissão</th>
-                      <th style={{padding:'8px 10px', textAlign:'left', color:'var(--text-dim)', fontWeight:600}}>Cód.</th>
-                      <th style={{padding:'8px 10px', textAlign:'right', color:'var(--text-dim)', fontWeight:600}}>Saldo kg</th>
-                      <th style={{padding:'8px 10px', textAlign:'left', color:'var(--text-dim)', fontWeight:600}}>Romaneio *</th>
-                      <th style={{padding:'8px 10px', textAlign:'right', color:'var(--text-dim)', fontWeight:600}}>Vol. Líq. kg *</th>
-                      <th style={{padding:'8px 10px', textAlign:'right', color:'var(--text-dim)', fontWeight:600}}>Vol. Final kg</th>
+                      <th style={{padding:'8px 10px', textAlign:'left', color:'var(--text-dim)', fontWeight:600}}>Cód. Material *</th>
+                      <th style={{padding:'8px 10px', textAlign:'left', color:'var(--text-dim)', fontWeight:600}}>
+                        {multiForm.tipo_saida === 'insumo' ? 'Lote POY' : 'Lote POY *'}
+                      </th>
+                      <th style={{padding:'8px 10px', textAlign:'right', color:'var(--text-dim)', fontWeight:600}}>
+                        {multiForm.tipo_saida === 'insumo' ? 'Volume/Qtd *' : 'Vol. Líq. (kg) *'}
+                      </th>
+                      <th style={{padding:'8px 10px', textAlign:'right', color:'var(--text-dim)', fontWeight:600}}>Saldo Disp.</th>
+                      <th style={{padding:'8px 10px', textAlign:'right', color:'var(--text-dim)', fontWeight:600}}>Vol. Final</th>
+                      <th style={{width:32}}></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {loteLinhas.map((linha, idx) => {
-                      const volLiq = parseFloat(linha.volume_liquido_kg) || 0
-                      const volFinal = calcularVolumeAbatido(volLiq, loteForm.tipo_saida)
-                      const saldo = Number(linha.nf.volume_saldo_kg)
-                      const excede = volFinal > saldo + 0.01
+                    {multiLinhas.map(l => {
+                      const vol      = parseFloat(l.volume) || 0
+                      const saldo    = l.codigo_material ? getSaldoMultiLinha(l) : null
+                      const volFinal = vol > 0 ? calcularVolumeAbatido(vol, multiForm.tipo_saida, l.codigo_material, percentualBase) : 0
+                      const excede   = saldo != null && vol > 0 && volFinal > saldo + 0.01
+                      const isInsumo = multiForm.tipo_saida === 'insumo'
                       return (
-                        <tr key={linha.nf.id} style={{
-                          borderBottom:'1px solid rgba(255,255,255,0.05)',
-                          opacity: linha.incluir ? 1 : 0.4,
-                          background: excede ? 'rgba(255,60,60,0.06)' : undefined
-                        }}>
-                          <td style={{padding:'8px 10px', textAlign:'center'}}>
-                            <input type="checkbox" checked={linha.incluir}
-                              onChange={e => setLinha(idx, 'incluir', e.target.checked)} />
-                          </td>
-                          <td style={{padding:'8px 10px', fontWeight:700, fontFamily:'monospace'}}>{linha.nf.numero_nf}</td>
-                          <td style={{padding:'8px 10px', fontSize:12, color:'var(--text-dim)'}}>
-                            {linha.nf.data_emissao ? new Date(linha.nf.data_emissao).toLocaleDateString('pt-BR') : '—'}
-                          </td>
-                          <td style={{padding:'8px 10px', fontSize:12}}>{linha.nf.codigo_material || '—'}</td>
-                          <td style={{padding:'8px 10px', textAlign:'right', color:'var(--accent-2)', fontWeight:600, fontFamily:'monospace'}}>
-                            {fmt(saldo)}
-                            <button title="Usar saldo total" style={{marginLeft:6, background:'none', border:'none', cursor:'pointer', fontSize:10, color:'var(--accent)', padding:0}}
-                              onClick={() => {
-                                const temAbat = TIPOS_COM_ABATIMENTO.includes(loteForm.tipo_saida)
-                                const perc = getPercentualAbatimento(loteForm.codigo_material || '')
-                                const liq = temAbat ? (saldo / (1 - perc)).toFixed(3) : saldo.toFixed(3)
-                                setLinha(idx, 'volume_liquido_kg', liq)
-                              }}>↓max</button>
+                        <tr key={l._id} style={{borderBottom:'1px solid rgba(255,255,255,0.05)', opacity: l.incluir ? 1 : 0.45, background: excede ? 'rgba(255,60,60,0.06)' : undefined}}>
+                          <td style={{padding:'6px 10px', textAlign:'center'}}>
+                            <input type="checkbox" checked={l.incluir} onChange={e => setMultiLinha(l._id, 'incluir', e.target.checked)} />
                           </td>
                           <td style={{padding:'6px 10px'}}>
-                            <input
-                              className="form-input"
-                              style={{width:130, fontFamily:'monospace', borderColor: excede ? 'var(--danger)' : undefined}}
-                              placeholder="Ex: 122041"
-                              value={linha.romaneio}
-                              disabled={!linha.incluir}
-                              onChange={e => setLinha(idx, 'romaneio', e.target.value)}
-                            />
+                            <input className="form-input" style={{width:120, fontFamily:'monospace'}} placeholder="Ex: 21986"
+                              value={l.codigo_material} disabled={!l.incluir}
+                              onChange={e => setMultiLinha(l._id, 'codigo_material', e.target.value)} />
                           </td>
                           <td style={{padding:'6px 10px'}}>
-                            <input
-                              className="form-input"
-                              type="number" step="0.001" min="0"
+                            <input className="form-input" style={{width:90, fontFamily:'monospace'}} placeholder={isInsumo ? 'Opcional' : 'Ex: 37553'}
+                              value={l.lote_poy} disabled={!l.incluir}
+                              onChange={e => setMultiLinha(l._id, 'lote_poy', e.target.value)} />
+                          </td>
+                          <td style={{padding:'6px 10px'}}>
+                            <input className="form-input" type="number" step="0.001" min="0"
                               style={{width:110, textAlign:'right', fontFamily:'monospace', borderColor: excede ? 'var(--danger)' : undefined}}
-                              placeholder="0,000"
-                              value={linha.volume_liquido_kg}
-                              disabled={!linha.incluir}
-                              onChange={e => setLinha(idx, 'volume_liquido_kg', e.target.value)}
-                            />
+                              placeholder="0,000" value={l.volume} disabled={!l.incluir}
+                              onChange={e => setMultiLinha(l._id, 'volume', e.target.value)} />
                           </td>
-                          <td style={{padding:'8px 10px', textAlign:'right', fontFamily:'monospace', fontWeight:600, color: excede ? 'var(--danger)' : 'var(--accent)'}}>
-                            {volLiq > 0 ? fmt(volFinal) : '—'}
+                          <td style={{padding:'8px 10px', textAlign:'right', fontFamily:'monospace', color: saldo != null && saldo <= 0.01 ? 'var(--danger)' : 'var(--accent-2)', fontWeight:600, fontSize:12}}>
+                            {saldo != null ? (
+                              <>
+                                {fmt(saldo)}{!isInsumo ? ' kg' : ''}
+                                {saldo > 0.01 && vol === 0 && (
+                                  <button title="Usar saldo total" style={{marginLeft:4, background:'none', border:'none', cursor:'pointer', fontSize:10, color:'var(--accent)', padding:0}}
+                                    onClick={() => {
+                                      const perc = getPercentualAbatimento(l.codigo_material, percentualBase)
+                                      const temA = TIPOS_COM_ABATIMENTO.includes(multiForm.tipo_saida)
+                                      setMultiLinha(l._id, 'volume', temA ? (saldo / (1 - perc)).toFixed(3) : saldo.toFixed(3))
+                                    }}>↓max</button>
+                                )}
+                              </>
+                            ) : '—'}
+                          </td>
+                          <td style={{padding:'8px 10px', textAlign:'right', fontFamily:'monospace', fontWeight:600, color: excede ? 'var(--danger)' : vol > 0 ? 'var(--accent)' : 'var(--text-dim)', fontSize:12}}>
+                            {vol > 0 ? `${fmt(volFinal)}${!isInsumo ? ' kg' : ''}` : '—'}
                             {excede && <div style={{fontSize:10, color:'var(--danger)'}}>excede saldo</div>}
+                          </td>
+                          <td style={{padding:'6px 8px', textAlign:'center'}}>
+                            {multiLinhas.length > 1 && (
+                              <button onClick={() => removeMultiLinha(l._id)}
+                                style={{background:'none', border:'none', cursor:'pointer', color:'var(--danger)', fontSize:16, padding:0}}>✕</button>
+                            )}
                           </td>
                         </tr>
                       )
@@ -1092,53 +1075,86 @@ export default function SaidaPage() {
                   </tbody>
                   <tfoot>
                     <tr style={{borderTop:'2px solid var(--border)', background:'rgba(255,255,255,0.03)'}}>
-                      <td colSpan={6} style={{padding:'8px 10px', fontSize:12, color:'var(--text-dim)'}}>
-                        {loteLinhas.filter(l => l.incluir && parseFloat(l.volume_liquido_kg) > 0).length} romaneio(s) a gerar
+                      <td colSpan={3} style={{padding:'8px 10px'}}>
+                        <button className="btn btn-ghost btn-sm" onClick={addMultiLinha} style={{fontSize:12}}>+ Adicionar material</button>
                       </td>
-                      <td style={{padding:'8px 10px', textAlign:'right', fontFamily:'monospace', fontWeight:700}}>
-                        {fmt(loteLinhas.filter(l=>l.incluir).reduce((a,l) => a + (parseFloat(l.volume_liquido_kg)||0), 0))}
+                      <td style={{padding:'8px 10px', textAlign:'right', fontFamily:'monospace', fontWeight:700, color:'var(--text-dim)', fontSize:12}}>
+                        {fmt(multiLinhas.filter(l=>l.incluir).reduce((a,l) => a + (parseFloat(l.volume)||0), 0))}
+                        {multiForm.tipo_saida !== 'insumo' ? ' kg' : ''}
                       </td>
-                      <td style={{padding:'8px 10px', textAlign:'right', fontFamily:'monospace', fontWeight:700, color:'var(--accent)'}}>
-                        {fmt(loteLinhas.filter(l=>l.incluir).reduce((a,l) => a + calcularVolumeAbatido(parseFloat(l.volume_liquido_kg)||0, loteForm.tipo_saida), 0))}
+                      <td />
+                      <td style={{padding:'8px 10px', textAlign:'right', fontFamily:'monospace', fontWeight:700, color:'var(--accent)', fontSize:12}}>
+                        {fmt(multiLinhas.filter(l=>l.incluir).reduce((a,l) => a + calcularVolumeAbatido(parseFloat(l.volume)||0, multiForm.tipo_saida, l.codigo_material, percentualBase), 0))}
+                        {multiForm.tipo_saida !== 'insumo' ? ' kg' : ''}
                       </td>
+                      <td />
                     </tr>
                   </tfoot>
                 </table>
               </div>
 
               <div style={{display:'flex', justifyContent:'flex-end', gap:10}}>
-                <button className="btn btn-ghost" onClick={resetLote}>↺ Recomeçar</button>
-                <button
-                  className="btn btn-primary"
-                  onClick={handleGerarLote}
-                  disabled={loteLoading || !loteForm.tipo_saida || loteLinhas.filter(l=>l.incluir && parseFloat(l.volume_liquido_kg)>0).length === 0}
-                >
-                  {loteLoading ? '⏳ Gerando...' : `⚡ Gerar ${loteLinhas.filter(l=>l.incluir && parseFloat(l.volume_liquido_kg)>0).length} Romaneio(s)`}
+                <button className="btn btn-ghost" onClick={resetMulti}>↺ Recomeçar</button>
+                <button className="btn btn-primary" onClick={handleGerarMulti}
+                  disabled={multiLoading || !multiForm.romaneio_microdata || !multiForm.tipo_saida ||
+                    multiLinhas.filter(l=>l.incluir && l.codigo_material && parseFloat(l.volume)>0).length === 0}>
+                  {multiLoading ? '⏳ Registrando...' : `⚡ Gerar Romaneio (${multiLinhas.filter(l=>l.incluir && l.codigo_material && parseFloat(l.volume)>0).length} itens)`}
                 </button>
               </div>
             </>
           )}
 
-          {/* Resultados */}
-          {loteResultados.length > 0 && (
-            <div style={{marginTop:20, background:'rgba(0,195,100,0.08)', border:'1px solid var(--accent-2)', borderRadius:10, padding:16}}>
+          {/* Resultado */}
+          {multiResultado && (
+            <div style={{marginTop:8, background:'rgba(0,195,100,0.08)', border:'1px solid var(--accent-2)', borderRadius:10, padding:16}}>
               <div style={{fontWeight:700, color:'var(--accent-2)', fontSize:14, marginBottom:12}}>
-                ✅ {loteResultados.length} romaneio(s) gerado(s) com sucesso!
+                ✅ Romaneio {multiForm.romaneio_microdata} — {multiResultado.itens.length} baixa(s) registrada(s)!
               </div>
-              {loteResultados.map((r, i) => (
-                <div key={i} style={{display:'flex', justifyContent:'space-between', fontSize:13, padding:'4px 0', borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
-                  <span style={{fontFamily:'monospace', fontWeight:600}}>{r.romaneio}</span>
-                  <span style={{color:'var(--text-dim)'}}>NF {r.nf}</span>
-                  <span style={{color:'var(--accent)', fontFamily:'monospace'}}>{fmt(calcularVolumeAbatido(r.volLiq, loteForm.tipo_saida))} kg</span>
+              <div style={{overflowX:'auto', marginBottom:12}}>
+                <table style={{width:'100%', borderCollapse:'collapse', fontSize:13}}>
+                  <thead>
+                    <tr style={{background:'rgba(255,255,255,0.04)'}}>
+                      <th style={{padding:'6px 10px', textAlign:'left', color:'var(--text-dim)'}}>Cód. Material</th>
+                      <th style={{padding:'6px 10px', textAlign:'left', color:'var(--text-dim)'}}>Lote POY</th>
+                      <th style={{padding:'6px 10px', textAlign:'left', color:'var(--text-dim)'}}>Descrição</th>
+                      <th style={{padding:'6px 10px', textAlign:'right', color:'var(--text-dim)'}}>Volume</th>
+                      <th style={{padding:'6px 10px', textAlign:'right', color:'var(--text-dim)'}}>Debitado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {multiResultado.itens.map((it, i) => (
+                      <tr key={i} style={{borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
+                        <td style={{padding:'6px 10px', fontFamily:'monospace', fontWeight:700}}>{it.codigo_material}</td>
+                        <td style={{padding:'6px 10px', fontFamily:'monospace'}}>{it.lote_poy || '—'}</td>
+                        <td style={{padding:'6px 10px', fontSize:12, color:'var(--text-dim)'}}>{it.descricao_material || '—'}</td>
+                        <td style={{padding:'6px 10px', textAlign:'right', fontFamily:'monospace'}}>{fmt(it.volume_liquido_kg)}</td>
+                        <td style={{padding:'6px 10px', textAlign:'right', fontFamily:'monospace', fontWeight:700, color:'var(--accent)'}}>{fmt(it.volume_abatido_kg)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {multiResultado.erros?.length > 0 && (
+                <div style={{fontSize:12, color:'var(--danger)', marginBottom:10}}>
+                  ⚠️ Erros: {multiResultado.erros.map(e => `${e.material}: ${e.erro}`).join(' | ')}
                 </div>
-              ))}
-              <div style={{display:'flex', gap:8, marginTop:12, flexWrap:'wrap'}}>
-                <button className="btn btn-ghost btn-sm" onClick={resetLote}>Novo lote</button>
+              )}
+              <div style={{display:'flex', gap:8, flexWrap:'wrap'}}>
+                <button className="btn btn-primary btn-sm" onClick={() => gerarMultiSaidaPDF({
+                  romaneio_microdata: multiForm.romaneio_microdata,
+                  tipo_saida:         multiForm.tipo_saida,
+                  lote_acabado:       multiForm.lote_acabado,
+                  itens:              multiResultado.itens,
+                  criado_em:          new Date().toISOString(),
+                }, config)}>
+                  📄 Baixar Romaneio PDF
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={resetMulti}>Nova multi-saída</button>
               </div>
             </div>
           )}
         </div>
-      )} {/* fim aba lote */}
+      )} {/* fim aba multi */}
       </> )} {/* fim bloco não-supervisor */}
 
       {/* ── Filtros + Histórico ── */}
