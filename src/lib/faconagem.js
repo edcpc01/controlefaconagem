@@ -48,15 +48,15 @@ export const MATERIAL_ESPECIAL_135612 = {
   ],
 }
 
-export function getPercentualAbatimento(codigoMaterial) {
-  return codigoMaterial === MATERIAL_ESPECIAL_135612.codigo
-    ? MATERIAL_ESPECIAL_135612.percentual_abatimento
-    : PERCENTUAL_ABATIMENTO
+// percentualBase: valor configurado pelo admin (ex: 0.015). Se omitido, usa PERCENTUAL_ABATIMENTO.
+export function getPercentualAbatimento(codigoMaterial, percentualBase) {
+  if (codigoMaterial === MATERIAL_ESPECIAL_135612.codigo) return MATERIAL_ESPECIAL_135612.percentual_abatimento
+  return percentualBase != null ? percentualBase : PERCENTUAL_ABATIMENTO
 }
 
-export function calcularVolumeAbatido(volumeLiquido, tipoSaida, codigoMaterial = '') {
+export function calcularVolumeAbatido(volumeLiquido, tipoSaida, codigoMaterial = '', percentualBase) {
   if (!TIPOS_COM_ABATIMENTO.includes(tipoSaida)) return volumeLiquido
-  return volumeLiquido * (1 - getPercentualAbatimento(codigoMaterial))
+  return volumeLiquido * (1 - getPercentualAbatimento(codigoMaterial, percentualBase))
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -329,7 +329,7 @@ export async function criarNFsEntradaLote(itens, usuario, colecoes = COLECOES_PA
 // PREVIEW FIFO (sem gravar — usado para confirmação)
 // ─────────────────────────────────────────────────────────────────
 
-export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unidadeId = '', volumeLiquido = null, volumeAbatimentoOverride = null, colecoes = COLECOES_PADRAO } = {}) {
+export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unidadeId = '', volumeLiquido = null, volumeAbatimentoOverride = null, percentualBase = null, loteDigitos = 4, colecoes = COLECOES_PADRAO } = {}) {
   const snap = await getDocs(query(collection(db, colecoes.nf_entrada), orderBy('data_emissao', 'asc')))
   const allNFs = snap.docs.map(docToObj)
 
@@ -338,8 +338,8 @@ export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unid
     if (unidadeId && (nf.unidade_id || '') !== unidadeId) return false
     if (codMat && nf.codigo_material !== codMat) return false
     if (lote) {
-      const loteNF    = String(nf.lote || '').substring(0, 4)
-      const loteSaida = String(lote).substring(0, 4)
+      const loteNF    = String(nf.lote || '').substring(0, loteDigitos)
+      const loteSaida = String(lote).substring(0, loteDigitos)
       if (loteNF !== loteSaida) return false
     }
     return true
@@ -386,14 +386,15 @@ export async function criarSaida(payload, usuario, colecoes = COLECOES_PADRAO) {
     romaneio_microdata, codigo_material, lote_poy, lote_acabado,
     tipo_saida, volume_liquido_kg, volume_bruto_kg, quantidade,
     unidade_id = '',
-    volume_abatimento_override = null,  // override manual do valor do abatimento (apenas 135612)
+    volume_abatimento_override = null,
+    percentual_base = null,  // % configurado pelo admin via Config (ex: 0.015)
   } = payload
 
   const temAbatimento         = TIPOS_COM_ABATIMENTO.includes(tipo_saida)
   const isRhodia              = colecoes.nf_entrada === 'nf_entrada'
   const isEspecial135612      = isRhodia && codigo_material === MATERIAL_ESPECIAL_135612.codigo
-  const volume_abatido_kg     = calcularVolumeAbatido(volume_liquido_kg, tipo_saida, isRhodia ? codigo_material : '')
-  const percentual_abatimento = temAbatimento ? getPercentualAbatimento(codigo_material) : 0
+  const volume_abatido_kg     = calcularVolumeAbatido(volume_liquido_kg, tipo_saida, isRhodia ? codigo_material : '', percentual_base)
+  const percentual_abatimento = temAbatimento ? getPercentualAbatimento(codigo_material, percentual_base) : 0
   // volume_abatimento_kg: o valor que será distribuído entre os materiais companion
   const volume_abatimento_kg  = temAbatimento && isEspecial135612
     ? (volume_abatimento_override != null
@@ -650,7 +651,7 @@ export function exportarExcel(nfs, saidas) {
     'Vol. Bruto (kg)':    fmtNum(s.volume_bruto_kg),
     'Quantidade':         s.quantidade || '',
     'Vol. Final (kg)':    fmtNum(s.volume_abatido_kg),
-    'Abatimento':         TIPOS_COM_ABATIMENTO.includes(s.tipo_saida) ? '1,5%' : '0%',
+    'Abatimento':         TIPOS_COM_ABATIMENTO.includes(s.tipo_saida) ? `${((s.percentual_abatimento || 0.015) * 100).toFixed(1).replace('.', ',')}%` : '0%',
     'Data/Hora':          fmtDateTime(s.criado_em),
     'Usuário':            s.usuario_email || '',
     'NFs Abatidas':       (s.alocacao_saida || []).map(a => `NF ${a.numero_nf}: ${fmtNum(a.volume_alocado_kg)} kg`).join(' | '),

@@ -25,6 +25,7 @@ export default function ConfigPage() {
 
   const [logoBase64, setLogoBase64] = useState('')
   const [logoPreview, setLogoPreview] = useState('')
+  const [abatimentoPct, setAbatimentoPct] = useState('')
   const [saving, setSaving]         = useState(false)
   const [promovendo, setPromovendo] = useState(false)
   const [toasts, setToasts]         = useState([])
@@ -39,6 +40,8 @@ export default function ConfigPage() {
   useEffect(() => {
     carregarConfig(colecoes).then(cfg => {
       if (cfg.logoBase64) { setLogoBase64(cfg.logoBase64); setLogoPreview(cfg.logoBase64) }
+      if (cfg.abatimento_pct != null) setAbatimentoPct(String((cfg.abatimento_pct * 100).toFixed(2)))
+      else setAbatimentoPct('1.5')
     })
   }, [colecoes])
 
@@ -54,7 +57,9 @@ export default function ConfigPage() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      await salvarConfig({ logoBase64 }, colecoes)
+      const pct = parseFloat(abatimentoPct.replace(',', '.'))
+      if (isNaN(pct) || pct < 0 || pct > 100) { toast('% de abatimento inválido.', 'error'); setSaving(false); return }
+      await salvarConfig({ logoBase64, abatimento_pct: pct / 100 }, colecoes)
       toast('Configurações salvas!')
     } catch (e) {
       toast(e.message, 'error')
@@ -175,6 +180,35 @@ export default function ConfigPage() {
           </button>
         </div>
       </div>
+
+      {/* ── Parâmetros de Operação (só admin) ── */}
+      {isAdmin && (
+        <div className="card" style={{marginBottom:20}}>
+          <div className="card-title">Parâmetros de Operação</div>
+          <div style={{fontSize:13, color:'var(--text-dim)', marginBottom:16}}>
+            Configurações aplicadas à operação ativa: <strong style={{color:'var(--accent)'}}>{colecoes?.nf_entrada === 'nf_entrada' ? 'Façonagem Rhodia' : 'Façonagem Nilit'}</strong>
+          </div>
+          <div style={{display:'flex', alignItems:'flex-end', gap:16, flexWrap:'wrap'}}>
+            <div className="form-group" style={{margin:0, flex:'0 1 220px'}}>
+              <label className="form-label">% de Abatimento (Faturamento)</label>
+              <div style={{display:'flex', alignItems:'center', gap:8}}>
+                <input
+                  type="number" step="0.01" min="0" max="100"
+                  className="form-input"
+                  style={{width:100}}
+                  value={abatimentoPct}
+                  onChange={e => setAbatimentoPct(e.target.value)}
+                />
+                <span style={{fontSize:13, color:'var(--text-dim)'}}>%</span>
+              </div>
+            </div>
+            <div style={{fontSize:12, color:'var(--text-dim)', paddingBottom:4}}>
+              Padrão: 1,5%. Aplica-se ao tipo de saída "Faturamento". <br/>
+              Troque a operação ativa para configurar a outra façonagem.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Logo PDF ── */}
       <div className="card" style={{marginBottom:20}}>

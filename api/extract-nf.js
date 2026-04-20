@@ -117,12 +117,14 @@ ${textoNF.slice(0, 5000)}`
       parsed = JSON.parse(match[0])
     }
 
+    const loteDigitos = (operacao === 'nilit') ? 5 : 4
+
     // Normaliza: se a IA retornou formato antigo (sem itens), converte
     if (!parsed.itens) {
       parsed.itens = [{
         codigo_material: parsed.codigo_material || '',
         descricao_material: parsed.descricao_material || parsed.descricao || '',
-        lote: parsed.lote ? String(parsed.lote).replace(/\D/g,'').substring(0,5) : '',
+        lote: parsed.lote ? String(parsed.lote).replace(/\D/g,'').substring(0, loteDigitos) : '',
         volume_kg: parsed.volume_kg || 0,
         valor_unitario: parsed.valor_unitario || 0,
       }]
@@ -132,7 +134,7 @@ ${textoNF.slice(0, 5000)}`
     parsed.itens = parsed.itens.map(item => ({
       ...item,
       descricao_material: item.descricao_material || item.descricao || '',
-      lote: item.lote ? String(item.lote).replace(/\D/g,'').substring(0,5) : '',
+      lote: item.lote ? String(item.lote).replace(/\D/g,'').substring(0, loteDigitos) : '',
     }))
 
     return res.status(200).json(parsed)

@@ -41,12 +41,12 @@ function tipoBadge(tipo) {
 const fmt = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 // ── Modal de Confirmação FIFO ─────────────────────────────────────────────
-function ConfirmacaoModal({ form, preview, previewsCompanion, onConfirm, onCancel, loading }) {
+function ConfirmacaoModal({ form, preview, previewsCompanion, onConfirm, onCancel, loading, percentualBase }) {
   const volumeLiq    = parseFloat(form.volume_liquido_kg) || 0
   const temAbat      = TIPOS_COM_ABATIMENTO.includes(form.tipo_saida)
   const isEsp135612  = form.codigo_material === MATERIAL_ESPECIAL_135612.codigo
-  const percAbat     = getPercentualAbatimento(form.codigo_material)
-  const volumeFinal  = calcularVolumeAbatido(volumeLiq, form.tipo_saida, form.codigo_material)
+  const percAbat     = getPercentualAbatimento(form.codigo_material, percentualBase)
+  const volumeFinal  = calcularVolumeAbatido(volumeLiq, form.tipo_saida, form.codigo_material, percentualBase)
   const volumeAbat   = temAbat ? volumeLiq * percAbat : 0
   const tipoLbl      = TIPOS_SAIDA.find(t => t.value === form.tipo_saida)?.label || ''
   const percLabel    = `${(percAbat * 100).toFixed(1).replace('.', ',')}%`
@@ -483,10 +483,12 @@ export default function SaidaPage() {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   // Cálculos do formulário
+  const percentualBase   = config.abatimento_pct != null ? config.abatimento_pct : null
+  const loteDigitos      = operacaoAtiva === 'nilit' ? 5 : 4
   const volumeLiq        = parseFloat(form.volume_liquido_kg) || 0
   const temAbatimento    = TIPOS_COM_ABATIMENTO.includes(form.tipo_saida)
   const isEspecial135612 = form.codigo_material === MATERIAL_ESPECIAL_135612.codigo
-  const percAbat         = getPercentualAbatimento(form.codigo_material)
+  const percAbat         = getPercentualAbatimento(form.codigo_material, percentualBase)
   // volumeAbatimento: valor efetivo do abatimento companion (pode ser override manual)
   const volumeAbatimentoBase = temAbatimento ? volumeLiq * percAbat : 0
   const volumeAbatimento = (isEspecial135612 && abatimentoOverride != null)
@@ -495,20 +497,20 @@ export default function SaidaPage() {
   // volumeAbatido: o que é debitado das NFs do próprio material 135612
   const volumeAbatido = isEspecial135612 && temAbatimento
     ? volumeLiq - volumeAbatimento
-    : calcularVolumeAbatido(volumeLiq, form.tipo_saida, form.codigo_material)
+    : calcularVolumeAbatido(volumeLiq, form.tipo_saida, form.codigo_material, percentualBase)
 
   // Saldo disponível filtrado por código do material + lote POY da unidade ativa
   const nfsFiltradas = useMemo(() => {
     return nfs.filter(nf => {
       if (form.codigo_material && nf.codigo_material !== form.codigo_material) return false
       if (form.lote_poy) {
-        const loteNF    = String(nf.lote || '').substring(0, 4)
-        const loteSaida = String(form.lote_poy).substring(0, 4)
+        const loteNF    = String(nf.lote || '').substring(0, loteDigitos)
+        const loteSaida = String(form.lote_poy).substring(0, loteDigitos)
         if (loteNF !== loteSaida) return false
       }
       return true
     })
-  }, [nfs, form.codigo_material, form.lote_poy])
+  }, [nfs, form.codigo_material, form.lote_poy, loteDigitos])
 
   const totalSaldo       = nfsFiltradas.reduce((a, n) => a + Number(n.volume_saldo_kg), 0)
   const saldoInsuficiente = volumeAbatido > totalSaldo + 0.01
@@ -535,6 +537,8 @@ export default function SaidaPage() {
       unidadeId:                unidadeAtiva || '',
       volumeLiquido:            volumeLiq,
       volumeAbatimentoOverride: isEspecial135612 ? volumeAbatimento : null,
+      percentualBase,
+      loteDigitos,
       colecoes,
     })
     setConfirmacao({ preview, previewsCompanion })
@@ -552,6 +556,7 @@ export default function SaidaPage() {
       quantidade:                  form.quantidade.trim() || null,
       unidade_id:                  unidadeAtiva || '',
       volume_abatimento_override:  isEspecial135612 ? volumeAbatimento : null,
+      percentual_base:             percentualBase,
     }
 
     // Se offline: enfileira
@@ -712,7 +717,9 @@ export default function SaidaPage() {
       <div className="page-header" style={{display:'flex', alignItems:'flex-start', justifyContent:'space-between', flexWrap:'wrap', gap:12}}>
         <div>
           <div className="page-title"><span>↑</span> Saída de Material</div>
-          <div className="page-sub">Registro de saídas com abatimento FIFO (1,5% padrão · 3,5% para mat. 135612)</div>
+          <div className="page-sub">
+            Registro de saídas com abatimento FIFO ({percentualBase != null ? `${(percentualBase * 100).toFixed(1).replace('.', ',')}%` : '1,5%'} padrão · 3,5% para mat. 135612)
+          </div>
         </div>
         <button className="btn btn-ghost" onClick={() => { exportarExcel(nfs, saidas); toast('Exportação concluída!') }}>
           📊 Excel
@@ -1232,6 +1239,7 @@ export default function SaidaPage() {
           onConfirm={handleConfirmar}
           onCancel={() => setConfirmacao(null)}
           loading={loading}
+          percentualBase={percentualBase}
         />
       )}
 
