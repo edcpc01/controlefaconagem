@@ -15,7 +15,7 @@ export default defineConfig({
         name: 'Façonagem Corradi Mazzer - Controle de Entradas e Saídas',
         short_name: 'Façonagem',
         description: 'Sistema de controle de façonagem - entradas e saídas',
-        theme_color: '#1a3a6b',
+        theme_color: '#1a4da1',
         background_color: '#0f1e3d',
         display: 'standalone',
         orientation: 'any',
