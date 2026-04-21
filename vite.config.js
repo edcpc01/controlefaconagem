@@ -10,7 +10,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'prompt',
-      includeAssets: ['favicon.ico', 'icon-192.png', 'icon-512.png'],
+      includeAssets: ['favicon.ico', 'icon-192.png', 'icon-512.png', 'logo.svg'],
       manifest: {
         name: 'Façonagem Corradi Mazzer - Controle de Entradas e Saídas',
         short_name: 'Façonagem',
