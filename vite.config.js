@@ -10,6 +10,8 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'prompt',
+      injectRegister: 'auto',
+      manifestFilename: 'manifest.webmanifest',
       includeAssets: ['favicon.ico', 'icon-144-new.png', 'icon-192-new.png', 'icon-256-new.png', 'icon-512-new.png', 'logo.svg'],
       manifest: {
         name: 'Façonagem Corradi Mazzer - Controle de Entradas e Saídas',
