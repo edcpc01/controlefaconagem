@@ -31,7 +31,7 @@ export default function LoginPage() {
       <div className="login-card">
         {/* Brand */}
         <div className="login-brand">
-          <div className="login-brand-icon">⬡</div>
+          <img src="/logo.svg" alt="Logo" style={{width:64,height:64,borderRadius:12,display:'block',margin:'0 auto 8px'}} />
           <div className="login-brand-title">Façonagem</div>
           <div className="login-brand-sub">Corradi Mazzer</div>
         </div>

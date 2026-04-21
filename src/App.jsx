@@ -274,7 +274,7 @@ function Layout({ children }) {
 
           {/* Brand */}
           <div className="header-brand">
-            <span className="brand-icon">⬡</span>
+            <img src="/logo.svg" alt="Logo" className="brand-icon" style={{width:34,height:34,borderRadius:7,display:'block'}} />
             <div>
               <div className="brand-title">Façonagem</div>
               <div className="brand-sub">Corradi Mazzer</div>
@@ -347,11 +347,34 @@ function Layout({ children }) {
   )
 }
 
+// ── Tela de acesso pendente ───────────────────────────────────────
+function PendentePage() {
+  const { logout } = useAuth()
+  const { perfil } = useUser() || {}
+  return (
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'100vh', background:'var(--bg)' }}>
+      <div style={{ maxWidth:420, width:'100%', padding:'40px 32px', background:'var(--bg-2)', borderRadius:16, border:'1px solid var(--border)', textAlign:'center' }}>
+        <img src="/logo.svg" alt="Logo" style={{ width:72, height:72, borderRadius:12, marginBottom:20 }} />
+        <div style={{ fontSize:20, fontWeight:700, color:'var(--text)', marginBottom:8 }}>Acesso Pendente</div>
+        <div style={{ fontSize:14, color:'var(--text-dim)', marginBottom:24, lineHeight:1.6 }}>
+          Olá, <strong style={{color:'var(--text)'}}>{perfil?.nome || perfil?.email}</strong>!<br/>
+          Seu cadastro foi realizado com sucesso. Aguarde um administrador liberar seu acesso ao sistema.
+        </div>
+        <div style={{ padding:'12px 16px', background:'rgba(255,180,0,0.08)', border:'1px solid var(--warn)', borderRadius:8, fontSize:13, color:'var(--warn)', marginBottom:24 }}>
+          ⏳ Assim que seu perfil for aprovado, você poderá entrar normalmente.
+        </div>
+        <button className="btn btn-ghost" onClick={logout}>Sair da conta</button>
+      </div>
+    </div>
+  )
+}
+
 // ── Protected routes ─────────────────────────────────────────────
 function ProtectedApp() {
   const { user }           = useAuth()
   const ctx                = useUser()
   const loadingPerfil      = ctx?.loadingPerfil ?? true
+  const perfil             = ctx?.perfil
   const isSupervisor       = ctx?.isSupervisor ?? false
 
   // Auth loading
@@ -364,6 +387,9 @@ function ProtectedApp() {
   }
 
   if (user === null) return <LoginPage />
+
+  // Usuário pendente — aguarda aprovação do admin
+  if (perfil?.role === 'pendente') return <PendentePage />
 
   return (
     <>

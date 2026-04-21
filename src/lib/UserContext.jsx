@@ -16,7 +16,7 @@ async function criarPerfil(uid, email, displayName) {
   const perfil = {
     email,
     nome:       displayName || email || uid,
-    role:       'analista',   // todo novo usuário começa como analista
+    role:       'pendente',   // aguarda aprovação do admin
     unidade_id: '',
     criado_em:  Timestamp.now(),
   }
@@ -50,7 +50,7 @@ export function UserProvider({ children, firebaseUser }) {
       } else if (init) {
         // Primeiro login — cria perfil
         try { p = await criarPerfil(firebaseUser.uid, firebaseUser.email, firebaseUser.displayName) }
-        catch { p = { email: firebaseUser.email, nome: firebaseUser.displayName, role: 'analista', unidade_id: '' } }
+        catch { p = { email: firebaseUser.email, nome: firebaseUser.displayName, role: 'pendente', unidade_id: '' } }
       } else {
         return   // snapshot intermediário antes do setDoc propagar
       }

@@ -10,6 +10,7 @@ function RoleBadge({ role }) {
   if (role === 'admin')             return <span className="badge badge-blue">Admin</span>
   if (role === 'supervisor_rhodia') return <span className="badge badge-warn">Sup. Rhodia</span>
   if (role === 'supervisor_nilit')  return <span className="badge badge-green">Sup. Nilit</span>
+  if (role === 'pendente')          return <span className="badge badge-danger" style={{animation:'pulse 1.5s infinite'}}>⏳ Pendente</span>
   return <span className="badge" style={{background:'rgba(180,180,180,0.15)',color:'var(--text-dim)'}}>Analista</span>
 }
 
@@ -165,7 +166,7 @@ export default function UsersPage() {
                   const eu         = ehEu(u)
                   const salvandoEu = salvando?.startsWith(u.id)
                   return (
-                    <tr key={u.id} style={{ background: eu ? 'rgba(0,195,255,0.04)' : undefined }}>
+                    <tr key={u.id} style={{ background: u.role === 'pendente' ? 'rgba(255,60,60,0.06)' : eu ? 'rgba(0,195,255,0.04)' : undefined }}>
                       <td>
                         <span style={{ fontWeight: 600 }}>{u.nome || '—'}</span>
                         {eu && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--accent)', background: 'rgba(0,195,255,0.12)', padding: '1px 6px', borderRadius: 10 }}>você</span>}
@@ -184,10 +185,11 @@ export default function UsersPage() {
                             disabled={!!salvandoEu}
                             onChange={e => handleUpdate(u.id, 'role', e.target.value)}
                           >
-                            <option value="admin">Admin</option>
+                            <option value="pendente">⏳ Pendente</option>
+                            <option value="analista">Analista</option>
                             <option value="supervisor_rhodia">Supervisor Rhodia</option>
                             <option value="supervisor_nilit">Supervisor Nilit</option>
-                            <option value="analista">Analista</option>
+                            <option value="admin">Admin</option>
                           </select>
                         )}
                       </td>
