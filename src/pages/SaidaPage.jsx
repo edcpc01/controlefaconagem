@@ -350,6 +350,26 @@ export default function SaidaPage() {
   const [multiResultado, setMultiResultado] = useState(null)
   const multiNextId = useRef(1)
 
+  // Filtros do histórico (hooks agrupados no topo)
+  const [fBusca, setFBusca] = useState('')
+  const [fTipo, setFTipo]   = useState('')
+  const [fDe, setFDe]       = useState('')
+  const [fAte, setFAte]     = useState('')
+
+  function toast(msg, type = 'success') {
+    const id = Date.now()
+    setToasts(t => [...t, { id, msg, type }])
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4000)
+  }
+
+  const load = () => {
+    setLoadingList(true)
+    Promise.all([listarSaidas(unidadeAtiva || '', colecoes), listarNFsEntrada(unidadeAtiva || '', colecoes)])
+      .then(([s, n]) => { setSaidas(s); setNfs(n) })
+      .catch(e => toast(e.message, 'error'))
+      .finally(() => setLoadingList(false))
+  }
+
   const addMultiLinha = () =>
     setMultiLinhas(ls => [...ls, { _id: multiNextId.current++, codigo_material: '', lote_poy: '', volume: '', incluir: true }])
   const removeMultiLinha = (id) => setMultiLinhas(ls => ls.filter(l => l._id !== id))
@@ -432,26 +452,6 @@ export default function SaidaPage() {
       load()
     }
     if (erros.length > 0) toast(`⚠️ ${erros.length} erro(s): ${erros.map(e => e.material).join(', ')}`, 'error')
-  }
-
-  // Filtros
-  const [fBusca, setFBusca] = useState('')
-  const [fTipo, setFTipo]   = useState('')
-  const [fDe, setFDe]       = useState('')
-  const [fAte, setFAte]     = useState('')
-
-  const toast = (msg, type = 'success') => {
-    const id = Date.now()
-    setToasts(t => [...t, { id, msg, type }])
-    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4000)
-  }
-
-  const load = () => {
-    setLoadingList(true)
-    Promise.all([listarSaidas(unidadeAtiva || '', colecoes), listarNFsEntrada(unidadeAtiva || '', colecoes)])
-      .then(([s, n]) => { setSaidas(s); setNfs(n) })
-      .catch(e => toast(e.message, 'error'))
-      .finally(() => setLoadingList(false))
   }
 
   useEffect(() => { load(); carregarConfig(colecoes).then(setConfig) }, [unidadeAtiva, operacaoAtiva])
@@ -623,40 +623,6 @@ export default function SaidaPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Erro ao enviar e-mail.')
       toast(`📧 Romaneio enviado para ${user.email}!`)
-    } catch (e) {
-      toast(e.message, 'error')
-    } finally {
-      setEmailLoading(false)
-    }
-  }
-
-  // Envia lote por e-mail (todos os romaneios de uma vez)
-  const handleEmailLote = async () => {
-    if (!user?.email) { toast('E-mail do usuário não encontrado.', 'error'); return }
-    if (loteResultados.length === 0) return
-    setEmailLoading(true)
-    try {
-      // Para cada resultado do lote, precisamos reconstruir a saída com alocações
-      // loteResultados: [{romaneio, nf, volLiq, res}]
-      const romaneiosPayload = loteResultados.map(r => {
-        const saidaObj    = r.res?.saida || {}
-        const alocObj     = r.res?.alocacoes || []
-        const alocCompObj = r.res?.alocacoesCompanion || []
-        const pdfBase64   = gerarRomaneioBase64(saidaObj, alocObj, config, alocCompObj)
-        return { ...saidaObj, pdfBase64 }
-      })
-      const res = await fetch('/api/send-romaneio', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          emailDestino: user.email,
-          nomeUsuario:  user.displayName || user.email,
-          romaneios:    romaneiosPayload,
-        })
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Erro ao enviar e-mail.')
-      toast(`📧 ${loteResultados.length} romaneio(s) enviado(s) para ${user.email}!`)
     } catch (e) {
       toast(e.message, 'error')
     } finally {
