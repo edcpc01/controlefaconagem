@@ -16,14 +16,16 @@ export default defineConfig({
         short_name: 'Façonagem',
         description: 'Sistema de controle de façonagem - entradas e saídas',
         theme_color: '#1a4da1',
-        background_color: '#0f1e3d',
+        background_color: '#1a4da1',
         display: 'standalone',
         orientation: 'any',
         scope: '/',
         start_url: '/',
         icons: [
-          { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
-          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+          { src: 'icon-144.png', sizes: '144x144', type: 'image/png', purpose: 'any' },
+          { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
         ]
       },
       workbox: {
