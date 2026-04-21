@@ -230,8 +230,8 @@ function Layout({ children }) {
         if (emAlerta > 0) linhas.push(`⚠️ ${emAlerta} NF${emAlerta>1?'s':''} vencem em breve`)
         new Notification('Façonagem Corradi Mazzer — Atenção!', {
           body: linhas.join('\n'),
-          icon: '/icon-192-new.png',
-          badge: '/icon-192-new.png',
+          icon: '/icon-192.png',
+          badge: '/icon-192.png',
           tag: 'nf-vencimento', // evita múltiplas notificações duplicadas
         })
       }
