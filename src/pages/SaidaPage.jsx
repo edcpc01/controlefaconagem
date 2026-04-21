@@ -356,6 +356,10 @@ export default function SaidaPage() {
   const setMultiLinha = (id, campo, valor) =>
     setMultiLinhas(ls => ls.map(l => l._id === id ? {...l, [campo]: valor} : l))
 
+  // Cálculos do formulário (declarados antes dos callbacks que os usam)
+  const percentualBase   = config.abatimento_pct != null ? config.abatimento_pct : null
+  const loteDigitos      = operacaoAtiva === 'nilit' ? 5 : 4
+
   const getSaldoMultiLinha = useCallback((linha) => {
     return nfs.filter(nf => {
       if (Number(nf.volume_saldo_kg) <= 0.001) return false
@@ -487,8 +491,6 @@ export default function SaidaPage() {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   // Cálculos do formulário
-  const percentualBase   = config.abatimento_pct != null ? config.abatimento_pct : null
-  const loteDigitos      = operacaoAtiva === 'nilit' ? 5 : 4
   const volumeLiq        = parseFloat(form.volume_liquido_kg) || 0
   const temAbatimento    = TIPOS_COM_ABATIMENTO.includes(form.tipo_saida)
   const isEspecial135612 = form.codigo_material === MATERIAL_ESPECIAL_135612.codigo
