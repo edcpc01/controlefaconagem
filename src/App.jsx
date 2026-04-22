@@ -202,7 +202,8 @@ function OperacaoSelector() {
 
 // ── Layout principal ─────────────────────────────────────────────
 function Layout({ children }) {
-  const [menuOpen, setMenuOpen] = useState(false)
+  const [menuOpen, setMenuOpen]         = useState(false)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
   const { theme, toggle }       = useTheme()
   const { user, logout }        = useAuth()
   const ctx                     = useUser()
@@ -311,11 +312,64 @@ function Layout({ children }) {
             <button className="btn-theme-icon" onClick={toggle} title="Alternar tema">
               {theme === 'dark' ? '☀' : '🌙'}
             </button>
-            <div className="user-chip" title={`${ctx?.perfil?.role === 'admin' ? 'Admin' : ctx?.isSupervisorCorradi ? 'Sup. Corradi' : ctx?.isSupervisor ? 'Supervisor' : 'Analista'} — ${user?.email}`}>
-              {user?.photoURL
-                ? <img src={user.photoURL} alt="" style={{ width: 26, height: 26, borderRadius: '50%' }} />
-                : <span style={{ fontSize: 13 }}>{(user?.displayName || user?.email || '?')[0].toUpperCase()}</span>
-              }
+            <div style={{ position: 'relative' }}>
+              <button
+                className="user-chip"
+                onClick={() => setUserMenuOpen(o => !o)}
+                title="Perfil"
+                style={{ cursor: 'pointer', border: 'none', background: 'none', padding: 0 }}
+              >
+                {user?.photoURL
+                  ? <img src={user.photoURL} alt="" style={{ width: 26, height: 26, borderRadius: '50%' }} />
+                  : <span style={{ fontSize: 13 }}>{(user?.displayName || user?.email || '?')[0].toUpperCase()}</span>
+                }
+              </button>
+              {userMenuOpen && (
+                <>
+                  <div
+                    style={{ position: 'fixed', inset: 0, zIndex: 999 }}
+                    onClick={() => setUserMenuOpen(false)}
+                  />
+                  <div style={{
+                    position: 'absolute', top: 'calc(100% + 10px)', right: 0,
+                    zIndex: 1000, minWidth: 220,
+                    background: 'var(--bg-2)', border: '1px solid var(--border)',
+                    borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.35)',
+                    padding: '14px 16px',
+                  }}>
+                    {/* Avatar + info */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                      <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
+                        {user?.photoURL
+                          ? <img src={user.photoURL} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : <span style={{ fontSize: 16, fontWeight: 700, color: '#fff' }}>{(user?.displayName || user?.email || '?')[0].toUpperCase()}</span>
+                        }
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {ctx?.perfil?.nome || user?.displayName || '—'}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {user?.email}
+                        </div>
+                        <div style={{ fontSize: 10, marginTop: 2 }}>
+                          <span style={{ background: 'rgba(34,85,184,0.2)', color: 'var(--accent)', borderRadius: 6, padding: '1px 7px', fontWeight: 600 }}>
+                            {ctx?.perfil?.role === 'admin' ? 'Admin' : ctx?.isSupervisorCorradi ? 'Sup. Corradi' : ctx?.isSupervisor ? 'Supervisor' : 'Analista'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ borderTop: '1px solid var(--border)', marginBottom: 10 }} />
+                    <button
+                      className="btn btn-danger btn-sm"
+                      style={{ width: '100%', justifyContent: 'center' }}
+                      onClick={() => { setUserMenuOpen(false); logout() }}
+                    >
+                      Sair da conta
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
             <button className="hamburger" onClick={() => setMenuOpen(o => !o)}>☰</button>
           </div>
