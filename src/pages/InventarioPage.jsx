@@ -224,7 +224,7 @@ export default function InventarioPage() {
                             {l.lote}
                           </td>
                           <td style={{ padding:'8px 12px', fontSize:12, color:'var(--text-dim)' }} className="col-hide-mobile">
-                            {l.nfs.length} NF{l.nfs.length !== 1 ? 's' : ''}
+                            {new Set(l.nfs.map(n => n.numero_nf)).size} NF{new Set(l.nfs.map(n => n.numero_nf)).size !== 1 ? 's' : ''}
                           </td>
                           <td style={{ padding:'8px 12px', textAlign:'right', fontFamily:'monospace', fontWeight:600, color:'var(--accent-2)' }}>
                             {fmt(l.saldo_teorico)}

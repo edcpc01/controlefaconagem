@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { listarNFsEntrada, listarSaidas, TIPOS_SAIDA, statusVencimentoNF, diasParaVencimento } from '../lib/faconagem'
 import { useUser } from '../lib/UserContext'
@@ -172,6 +172,17 @@ export default function DashboardPage() {
   const lotesEntrada = agruparPorLote(nfsMP)
   const lotesInsumo  = agruparPorLote(nfsInsumo)
   const lotesSaida   = agruparSaidasPorLote(saidas)
+
+  // NFs agrupadas por numero_nf para o card "NFs Recentes"
+  const nfsAgrupadasPorNF = useMemo(() => {
+    const mapa = {}
+    for (const nf of nfs) {
+      const key = nf.numero_nf
+      if (!mapa[key]) mapa[key] = { ...nf, volume_saldo_kg: 0 }
+      mapa[key].volume_saldo_kg += Number(nf.volume_saldo_kg || 0)
+    }
+    return Object.values(mapa)
+  }, [nfs])
 
   // Detecção de anomalia via IA
   const analisarAnomalias = async () => {
@@ -412,13 +423,13 @@ Responda SOMENTE em JSON, sem texto extra, sem markdown:
                 </tr>
               </thead>
               <tbody>
-                {nfs.length === 0 && (
+                {nfsAgrupadasPorNF.length === 0 && (
                   <tr><td colSpan={4}><div className="empty"><div className="empty-icon">📦</div><div className="empty-text">Nenhuma NF</div></div></td></tr>
                 )}
-                {nfs.slice(0,6).map(nf => (
-                  <tr key={nf.id}>
+                {nfsAgrupadasPorNF.slice(0,6).map(nf => (
+                  <tr key={nf.numero_nf}>
                     <td className="td-mono" style={{fontWeight:600}}>{nf.numero_nf}</td>
-                    <td className="td-mono">{nf.lote}</td>
+                    <td className="td-mono">{nf.lote || '—'}</td>
                     <td className="td-right td-mono" style={{color: Number(nf.volume_saldo_kg) <= 0.01 ? 'var(--danger)' : 'var(--accent-2)', fontWeight:600}}>
                       {fmt4(nf.volume_saldo_kg)}{nf.tipo_material !== 'insumo' ? ' kg' : ''}
                     </td>
