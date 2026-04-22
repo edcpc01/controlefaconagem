@@ -6,3 +6,8 @@ self.addEventListener('message', event => {
     self.skipWaiting()
   }
 })
+
+// Após ativar nova versão, assume o controle das abas de imediato (menos “app preso no JS velho”)
+self.addEventListener('activate', event => {
+  event.waitUntil(self.clients.claim())
+})

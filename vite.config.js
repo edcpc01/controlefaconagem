@@ -9,7 +9,7 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'prompt',
+      registerType: 'autoUpdate',
       injectRegister: 'auto',
       manifestFilename: 'manifest.webmanifest',
       includeAssets: ['favicon.ico', 'icon-144.png', 'icon-192.png', 'icon-256.png', 'icon-512.png', 'logo.svg'],
@@ -35,7 +35,7 @@ export default defineConfig({
         cacheId: `faconagem-v${BUILD_VERSION}`,
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
         cleanupOutdatedCaches: true,
-        skipWaiting: false,
+        skipWaiting: true,
         clientsClaim: true,
         additionalManifestEntries: [],
         importScripts: ['/sw-custom.js'],
@@ -63,4 +63,3 @@ export default defineConfig({
     })
   ]
 })
-
