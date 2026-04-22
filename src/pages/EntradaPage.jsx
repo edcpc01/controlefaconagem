@@ -257,7 +257,8 @@ function PainelMultiItem({ itens, onSalvar, onCancelar, loading, initialNF, init
 // ── Página Principal ─────────────────────────────────────────────
 export default function EntradaPage() {
   const { user }   = useAuth()
-  const { unidadeAtiva, isSupervisor } = useUser() || {}
+  const { unidadeAtiva, isSupervisor, isSupervisorCorradi } = useUser() || {}
+  const readOnly = isSupervisor || isSupervisorCorradi
   const { colecoes, operacaoAtiva } = useOperacao() || {}
   const navigate   = useNavigate()
   const pdfRef     = useRef()
@@ -485,7 +486,7 @@ export default function EntradaPage() {
       )}
 
       {/* Painel multi-item (quando PDF tem vários produtos) */}
-      {!isSupervisor && multiItens && (
+      {!readOnly && multiItens && (
         <PainelMultiItem
           initialNF={multiItens.numero_nf}
           initialData={multiItens.data_emissao}
@@ -498,7 +499,7 @@ export default function EntradaPage() {
       )}
 
       {/* Formulário de cadastro — oculto para supervisor e quando multi-item está aberto */}
-      {!isSupervisor && !multiItens && (
+      {!readOnly && !multiItens && (
         <div className="card" style={{marginBottom:24}}>
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16, flexWrap:'wrap', gap:10}}>
             <div className="card-title" style={{margin:0}}>Nova NF de Entrada</div>
@@ -577,8 +578,8 @@ export default function EntradaPage() {
                       <td style={{width:90, minWidth:90, overflow:'visible'}}>
                         <div style={{display:'flex', gap:2}}>
                           <button className="btn btn-ghost btn-sm" title="Ver detalhes" onClick={() => navigate(`/nf/${nf.id}`)}>🔍</button>
-                          {!isSupervisor && <button className="btn btn-ghost btn-sm" title="Editar" onClick={() => abrirEditar(nf)}>✏</button>}
-                          {!isSupervisor && <button className="btn btn-danger btn-sm" title="Remover" onClick={() => setConfirmDelete(nf)}>✕</button>}
+                          {!readOnly && <button className="btn btn-ghost btn-sm" title="Editar" onClick={() => abrirEditar(nf)}>✏</button>}
+                          {!readOnly && <button className="btn btn-danger btn-sm" title="Remover" onClick={() => setConfirmDelete(nf)}>✕</button>}
                         </div>
                       </td>
                     </tr>

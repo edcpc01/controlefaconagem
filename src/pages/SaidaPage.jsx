@@ -320,7 +320,8 @@ function SucessoModal({ ultimaSaida, onClose, onPDF }) {
 // ── Página Principal ──────────────────────────────────────────────────────
 export default function SaidaPage() {
   const { user } = useAuth()
-  const { unidadeAtiva, isSupervisor } = useUser() || {}
+  const { unidadeAtiva, isSupervisor, isSupervisorCorradi } = useUser() || {}
+  const readOnly = isSupervisor || isSupervisorCorradi
   const { colecoes, operacaoAtiva } = useOperacao() || {}
   const [saidas, setSaidas]           = useState([])
   const [nfs, setNfs]                 = useState([])
@@ -758,7 +759,7 @@ export default function SaidaPage() {
       )}
 
       {/* ── Tabs — ocultas para supervisor ── */}
-      {isSupervisor ? (
+      {readOnly ? (
         <div style={{ marginBottom:20, padding:'10px 16px', background:'rgba(255,180,0,0.08)', border:'1px solid var(--warn)', borderRadius:10, fontSize:13, color:'var(--warn)', fontWeight:600 }}>
           👁 Modo visualização — Supervisores não podem registrar saídas.
         </div>
@@ -1233,7 +1234,7 @@ export default function SaidaPage() {
                             const alocComp  = todasAloc.filter(a =>  a.codigo_material_companion)
                             handleGerarPDF(s, alocPrinc, alocComp)
                           }}>📄</button>
-                        {!isSupervisor && (
+                        {!readOnly && (
                         <button className="btn btn-ghost btn-sm" title="Excluir saída"
                           onClick={() => setConfirmDeleteSaida(s)}
                           style={{color:'var(--danger)'}}>🗑</button>

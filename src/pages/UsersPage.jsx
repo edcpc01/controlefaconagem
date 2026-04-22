@@ -7,10 +7,11 @@ function Toast({ toasts }) {
 }
 
 function RoleBadge({ role }) {
-  if (role === 'admin')             return <span className="badge badge-blue">Admin</span>
-  if (role === 'supervisor_rhodia') return <span className="badge badge-warn">Sup. Rhodia</span>
-  if (role === 'supervisor_nilit')  return <span className="badge badge-green">Sup. Nilit</span>
-  if (role === 'pendente')          return <span className="badge badge-danger" style={{animation:'pulse 1.5s infinite'}}>⏳ Pendente</span>
+  if (role === 'admin')              return <span className="badge badge-blue">Admin</span>
+  if (role === 'supervisor_rhodia')  return <span className="badge badge-warn">Sup. Rhodia</span>
+  if (role === 'supervisor_nilit')   return <span className="badge badge-green">Sup. Nilit</span>
+  if (role === 'supervisor_corradi') return <span className="badge" style={{background:'rgba(120,80,200,0.18)',color:'#a87fff',border:'1px solid rgba(120,80,200,0.35)'}}>Sup. Corradi</span>
+  if (role === 'pendente')           return <span className="badge badge-danger" style={{animation:'pulse 1.5s infinite'}}>⏳ Pendente</span>
   return <span className="badge" style={{background:'rgba(180,180,180,0.15)',color:'var(--text-dim)'}}>Analista</span>
 }
 
@@ -135,6 +136,18 @@ export default function UsersPage() {
               <li>Nível padrão para novos cadastros</li>
             </ul>
           </div>
+          <div style={{ padding: '14px 16px', background: 'rgba(120,80,200,0.07)', borderRadius: 8, border: '1px solid rgba(120,80,200,0.22)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <RoleBadge role="supervisor_corradi" />
+              <span style={{ fontWeight: 700, fontSize: 14 }}>Supervisor Corradi</span>
+            </div>
+            <ul style={{ margin: 0, padding: '0 0 0 16px', color: 'var(--text-dim)', fontSize: 13, lineHeight: 1.8 }}>
+              <li>Visualização de todas as operações</li>
+              <li>Acesso a Dashboard, KPIs, Inventário, Relatórios</li>
+              <li>Sem registro de entradas/saídas</li>
+              <li>Sem acesso a Config e Usuários</li>
+            </ul>
+          </div>
         </div>
       </div>
 
@@ -189,6 +202,7 @@ export default function UsersPage() {
                             <option value="analista">Analista</option>
                             <option value="supervisor_rhodia">Supervisor Rhodia</option>
                             <option value="supervisor_nilit">Supervisor Nilit</option>
+                            <option value="supervisor_corradi">Supervisor Corradi</option>
                             <option value="admin">Admin</option>
                           </select>
                         )}
@@ -196,9 +210,9 @@ export default function UsersPage() {
 
                       {/* Unidade — não se aplica a admin nem supervisor */}
                       <td>
-                        {(u.role === 'admin' || u.role === 'supervisor_rhodia' || u.role === 'supervisor_nilit') ? (
+                        {(u.role === 'admin' || u.role === 'supervisor_rhodia' || u.role === 'supervisor_nilit' || u.role === 'supervisor_corradi') ? (
                           <span style={{ fontSize: 12, color: 'var(--text-dim)', fontStyle: 'italic' }}>
-                            {u.role === 'admin' ? 'Todas' : u.role === 'supervisor_rhodia' ? 'Rhodia' : 'Nilit'}
+                            {u.role === 'admin' || u.role === 'supervisor_corradi' ? 'Todas' : u.role === 'supervisor_rhodia' ? 'Rhodia' : 'Nilit'}
                           </span>
                         ) : (
                           <select
@@ -220,7 +234,7 @@ export default function UsersPage() {
                       <td>
                         {salvandoEu ? (
                           <span style={{ fontSize: 11, color: 'var(--accent)' }}>Salvando...</span>
-                        ) : u.role === 'admin' || u.role === 'supervisor_rhodia' || u.role === 'supervisor_nilit' || u.unidade_id ? (
+                        ) : u.role === 'admin' || u.role === 'supervisor_rhodia' || u.role === 'supervisor_nilit' || u.role === 'supervisor_corradi' || u.unidade_id ? (
                           <span className="badge badge-green" style={{ fontSize: 10 }}>✓ OK</span>
                         ) : (
                           <span className="badge badge-warn" style={{ fontSize: 10 }}>⚠ Sem unidade</span>
@@ -235,7 +249,7 @@ export default function UsersPage() {
         )}
 
         <div style={{ marginTop: 16, padding: '10px 14px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, color: 'var(--text-dim)' }}>
-          💡 Todo usuário que faz login pela primeira vez é criado automaticamente como <strong style={{ color: 'var(--text)' }}>Analista</strong>. Somente um Admin pode alterar o nível.
+          💡 Todo usuário que faz login pela primeira vez é criado automaticamente como <strong style={{ color: 'var(--text)' }}>Pendente</strong>. Somente um Admin pode alterar o nível.
         </div>
       </div>
 

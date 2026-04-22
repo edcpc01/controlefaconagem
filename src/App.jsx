@@ -136,9 +136,9 @@ function UnidadeSelector() {
   const ctx = useUser()
   if (!ctx || !ctx.perfil) return null
 
-  const { isAdmin, isSupervisor, unidadeAtiva, trocarUnidade, perfil } = ctx
+  const { isAdmin, isSupervisor, isSupervisorCorradi, unidadeAtiva, trocarUnidade, perfil } = ctx
 
-  if (!isAdmin && !isSupervisor) {
+  if (!isAdmin && !isSupervisor && !isSupervisorCorradi) {
     const un = UNIDADES_DEFAULT.find(u => u.id === perfil.unidade_id)
     if (!un) return null
     return (
@@ -207,8 +207,9 @@ function Layout({ children }) {
   const { user, logout }        = useAuth()
   const ctx                     = useUser()
   const opCtx                   = useOperacao()
-  const isAdmin      = ctx?.isAdmin ?? false
-  const isSupervisor = ctx?.isSupervisor ?? false
+  const isAdmin             = ctx?.isAdmin ?? false
+  const isSupervisor        = ctx?.isSupervisor ?? false
+  const isSupervisorCorradi = ctx?.isSupervisorCorradi ?? false
   const [nfsAlertaCount, setNfsAlertaCount] = useState(0)
 
   // Carrega badge de vencimento + dispara notificação push ao abrir
@@ -256,8 +257,12 @@ function Layout({ children }) {
     { to: '/config',      label: 'Config',     icon: '⚙' },
   ]
 
+  const NAV_CORRADI = NAV_SUPERVISOR.filter(n => n.to !== '/config')
+
   const navItems = isAdmin
     ? [...NAV_BASE, { to: '/usuarios', label: 'Usuários', icon: '👥' }]
+    : isSupervisorCorradi
+    ? NAV_CORRADI
     : isSupervisor
     ? NAV_SUPERVISOR
     : NAV_BASE
@@ -306,7 +311,7 @@ function Layout({ children }) {
             <button className="btn-theme-icon" onClick={toggle} title="Alternar tema">
               {theme === 'dark' ? '☀' : '🌙'}
             </button>
-            <div className="user-chip" title={`${ctx?.perfil?.role === 'admin' ? 'Admin' : ctx?.isSupervisor ? 'Supervisor' : 'Analista'} — ${user?.email}`}>
+            <div className="user-chip" title={`${ctx?.perfil?.role === 'admin' ? 'Admin' : ctx?.isSupervisorCorradi ? 'Sup. Corradi' : ctx?.isSupervisor ? 'Supervisor' : 'Analista'} — ${user?.email}`}>
               {user?.photoURL
                 ? <img src={user.photoURL} alt="" style={{ width: 26, height: 26, borderRadius: '50%' }} />
                 : <span style={{ fontSize: 13 }}>{(user?.displayName || user?.email || '?')[0].toUpperCase()}</span>
@@ -371,11 +376,12 @@ function PendentePage() {
 
 // ── Protected routes ─────────────────────────────────────────────
 function ProtectedApp() {
-  const { user }           = useAuth()
-  const ctx                = useUser()
-  const loadingPerfil      = ctx?.loadingPerfil ?? true
-  const perfil             = ctx?.perfil
-  const isSupervisor       = ctx?.isSupervisor ?? false
+  const { user }            = useAuth()
+  const ctx                 = useUser()
+  const loadingPerfil       = ctx?.loadingPerfil ?? true
+  const perfil              = ctx?.perfil
+  const isSupervisor        = ctx?.isSupervisor ?? false
+  const isSupervisorCorradi = ctx?.isSupervisorCorradi ?? false
 
   // Auth loading
   if (user === undefined || (user !== null && loadingPerfil)) {
@@ -404,8 +410,8 @@ function ProtectedApp() {
           <Route path="/mapa"       element={<MapaCalorPage />} />
           <Route path="/relatorios" element={<RelatoriosPage />} />
           <Route path="/log"      element={<LogPage />} />
-          <Route path="/config"   element={<ConfigPage />} />
-          <Route path="/usuarios" element={isSupervisor ? <Navigate to="/" replace /> : <UsersPage />} />
+          <Route path="/config"   element={isSupervisorCorradi ? <Navigate to="/" replace /> : <ConfigPage />} />
+          <Route path="/usuarios" element={isSupervisor || isSupervisorCorradi ? <Navigate to="/" replace /> : <UsersPage />} />
           <Route path="*"         element={<Navigate to="/" replace />} />
         </Routes>
       </Layout>
