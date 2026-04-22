@@ -178,10 +178,14 @@ export default function DashboardPage() {
     const mapa = {}
     for (const nf of nfs) {
       const key = nf.numero_nf
-      if (!mapa[key]) mapa[key] = { ...nf, volume_saldo_kg: 0 }
+      if (!mapa[key]) mapa[key] = { ...nf, volume_saldo_kg: 0, _lotes: new Set() }
       mapa[key].volume_saldo_kg += Number(nf.volume_saldo_kg || 0)
+      if (nf.lote) mapa[key]._lotes.add(nf.lote)
     }
-    return Object.values(mapa)
+    return Object.values(mapa).map(nf => ({
+      ...nf,
+      lote: nf._lotes.size === 0 ? '—' : nf._lotes.size === 1 ? [...nf._lotes][0] : 'Diversos',
+    }))
   }, [nfs])
 
   // Detecção de anomalia via IA
