@@ -6,6 +6,7 @@ import {
   relFaturamentoPDF,    relFaturamentoXLSX,
   relDevolucoesPDF,     relDevolucoesXLSX,
   relInventarioPDF,     relInventarioXLSX,
+  relSaldoDisponivelNFPDF, relSaldoDisponivelNFXLSX,
 } from '../lib/faconagem'
 import { useUser } from '../lib/UserContext'
 import { useOperacao } from '../lib/OperacaoContext'
@@ -90,6 +91,10 @@ export default function RelatoriosPage() {
       return true
     })
   }, [nfs, buscaNF])
+
+  const nfsDisponiveis = useMemo(() => {
+    return nfsFiltradas.filter(n => Number(n.volume_saldo_kg) > 0.001)
+  }, [nfsFiltradas])
 
   const alocacoesFiltradas = useMemo(() => {
     const nfIds = new Set(nfsFiltradas.map(n => n.id))
@@ -179,7 +184,27 @@ export default function RelatoriosPage() {
       {/* Cards de relatório */}
       <div style={{display:'flex', flexDirection:'column', gap:16}}>
 
-        {/* 1 — Movimentações NF de Entrada */}
+        {/* 1 — Saldo Disponível NF de Entrada */}
+        <div className="card">
+          <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:12}}>
+            <div>
+              <div className="card-title" style={{margin:0}}>📥 Saldo Disponível das NFs de Entrada</div>
+              <div style={{fontSize:12, color:'var(--text-dim)', marginTop:4}}>
+                Consulta de todas as NFs de entrada que ainda possuem saldo disponível
+              </div>
+              <div style={{marginTop:8, display:'flex', gap:16, fontSize:12, flexWrap:'wrap'}}>
+                <span>Itens disponíveis: <strong style={{color:'var(--text)'}}>{nfsDisponiveis.length}</strong></span>
+                <span>Saldo Total: <strong style={{color:'var(--accent)'}}>{fmt(nfsDisponiveis.reduce((a,x)=>a+Number(x.volume_saldo_kg||0),0))} kg</strong></span>
+              </div>
+            </div>
+            <div style={{display:'flex', gap:8}}>
+              <BtnPDF  k="saldo-nf" onClick={() => relSaldoDisponivelNFPDF(nfsDisponiveis, filtroLabel)} />
+              <BtnXLSX k="saldo-nf" onClick={() => relSaldoDisponivelNFXLSX(nfsDisponiveis)} />
+            </div>
+          </div>
+        </div>
+
+        {/* 2 — Movimentações NF de Entrada */}
         <div className="card">
           <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:12}}>
             <div>

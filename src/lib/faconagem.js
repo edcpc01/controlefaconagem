@@ -1622,3 +1622,44 @@ export function relInventarioXLSX(inventarios) {
   })
   XLSX.writeFile(wb, `inventarios_${format(new Date(),'yyyyMMdd')}.xlsx`)
 }
+
+// ── 5. Saldo Disponível NF Entrada ───────────────────────────────
+export function relSaldoDisponivelNFPDF(nfs, filtro) {
+  const pdoc = new jsPDF({orientation:'landscape', unit:'mm', format:'a4'})
+  const W = pdoc.internal.pageSize.width
+  const sub = filtro ? `Período: ${filtro}` : `Emitido: ${fmtDT2(new Date())}`
+  pdfHeader(pdoc, 'Saldo Disponível NFs de Entrada', sub)
+
+  autoTable(pdoc, {
+    startY: 32, margin:{left:10,right:10},
+    head: [['NF','Emissão','Cód. Material','Descrição','Lote POY','Saldo (kg)','V. Unitário (R$)','Valor Total (R$)']],
+    body: nfs.map(nf => [
+      nf.numero_nf || '—', fmtDate2(nf.data_emissao), nf.codigo_material||'—', nf.descricao_material||'—', nf.lote||'—',
+      fmtN2(nf.volume_saldo_kg), fmtN2(nf.valor_unitario, 6), fmtN2(Number(nf.volume_saldo_kg||0) * Number(nf.valor_unitario||0), 2)
+    ]),
+    headStyles:{fillColor:MED_R,textColor:WHITE_R,fontSize:7,fontStyle:'bold'},
+    bodyStyles:{fontSize:7},
+    alternateRowStyles:{fillColor:[240,246,255]},
+    columnStyles:{5:{halign:'right'},6:{halign:'right'},7:{halign:'right'}},
+  })
+  pdfFooter(pdoc)
+  pdoc.save(`saldo_nfs_${format(new Date(),'yyyyMMdd')}.pdf`)
+}
+
+export function relSaldoDisponivelNFXLSX(nfs) {
+  const wb = XLSX.utils.book_new()
+  const rows = nfs.map(nf => ({
+    'NF': nf.numero_nf||'—', 
+    'Emissão NF': fmtDate2(nf.data_emissao),
+    'Cód. Material': nf.codigo_material||'—', 
+    'Descrição': nf.descricao_material||'—',
+    'Lote POY': nf.lote||'—',
+    'Saldo Atual (kg)': Number(nf.volume_saldo_kg||0),
+    'V. Unitário (R$)': Number(nf.valor_unitario||0),
+    'Valor Total (R$)': Number(nf.volume_saldo_kg||0) * Number(nf.valor_unitario||0),
+  }))
+  const ws = XLSX.utils.json_to_sheet(rows)
+  ws['!cols'] = [12,12,14,30,12,14,14,14].map(w=>({wch:w}))
+  XLSX.utils.book_append_sheet(wb, ws, 'Saldo NFs')
+  XLSX.writeFile(wb, `saldo_nfs_${format(new Date(),'yyyyMMdd')}.xlsx`)
+}
