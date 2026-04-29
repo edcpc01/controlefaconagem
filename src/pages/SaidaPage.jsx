@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import {
   listarSaidas, criarSaida, deletarSaida, listarNFsEntrada, previewFIFO,
   TIPOS_SAIDA, TIPOS_COM_ABATIMENTO,
-  calcularVolumeAbatido, getPercentualAbatimento, MATERIAL_ESPECIAL_135612,
+  calcularVolumeAbatido, getPercentualAbatimento, MATERIAL_ESPECIAL_135612, MATERIAL_OLEO_ENCIMAGEM_NILIT,
   gerarRomaneioPDF, gerarRomaneioBase64, gerarMultiSaidaPDF, exportarExcel, carregarConfig
 } from '../lib/faconagem'
 import { useAuth } from '../lib/AuthContext'
@@ -41,7 +41,7 @@ function tipoBadge(tipo) {
 const fmt = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 // ── Modal de Confirmação FIFO ─────────────────────────────────────────────
-function ConfirmacaoModal({ form, preview, previewsCompanion, onConfirm, onCancel, loading, percentualBase }) {
+function ConfirmacaoModal({ form, preview, previewsCompanion, previewOleoEncimagem, onConfirm, onCancel, loading, percentualBase }) {
   const volumeLiq    = parseFloat(form.volume_liquido_kg) || 0
   const temAbat      = TIPOS_COM_ABATIMENTO.includes(form.tipo_saida)
   const isEsp135612  = form.codigo_material === MATERIAL_ESPECIAL_135612.codigo
@@ -113,7 +113,7 @@ function ConfirmacaoModal({ form, preview, previewsCompanion, onConfirm, onCance
           Débito nas NFs de Entrada — Mat. {form.codigo_material} (FIFO):
         </div>
 
-        <div className="table-wrap" style={{marginBottom: isEsp135612 && previewsCompanion?.length ? 16 : 4}}>
+        <div className="table-wrap" style={{marginBottom: (isEsp135612 && previewsCompanion?.length) || previewOleoEncimagem ? 16 : 4}}>
           <table>
             <thead>
               <tr>
@@ -139,6 +139,49 @@ function ConfirmacaoModal({ form, preview, previewsCompanion, onConfirm, onCance
             </tbody>
           </table>
         </div>
+
+        {/* Seção Óleo de Encimagem (Nilit) — débito do material 23033 */}
+        {previewOleoEncimagem && (
+          <>
+            <div style={{fontSize:12, fontWeight:600, color:'var(--warn)', marginBottom:10, textTransform:'uppercase', letterSpacing:'0.04em'}}>
+              Óleo de Encimagem ({percLabel}) — Mat. {previewOleoEncimagem.codigo_material} {previewOleoEncimagem.descricao} — {fmt(previewOleoEncimagem.volume)} kg:
+            </div>
+            <div className="table-wrap" style={{marginBottom: 4}}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>NF</th>
+                    <th>Emissão</th>
+                    <th className="td-right">Saldo Atual</th>
+                    <th className="td-right">Será Debitado</th>
+                    <th className="td-right">Saldo Restante</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {previewOleoEncimagem.preview.map((p, i) => (
+                    <tr key={i}>
+                      <td className="td-mono" style={{fontWeight:600}}>{p.numero_nf}</td>
+                      <td style={{fontSize:12}}>{p.data_emissao ? format(new Date(p.data_emissao), 'dd/MM/yyyy') : '—'}</td>
+                      <td className="td-right td-mono">{fmt(p.saldo_atual)}</td>
+                      <td className="td-right td-mono" style={{color:'var(--warn)', fontWeight:600}}>− {fmt(p.volume_alocado_kg)}</td>
+                      <td className="td-right td-mono" style={{color: (p.saldo_atual - p.volume_alocado_kg) <= 0.01 ? 'var(--danger)' : 'var(--accent-2)'}}>
+                        {fmt(Math.max(0, p.saldo_atual - p.volume_alocado_kg))}
+                      </td>
+                    </tr>
+                  ))}
+                  {previewOleoEncimagem.preview.length === 0 && (
+                    <tr><td colSpan={5} style={{textAlign:'center', color:'var(--danger)', fontSize:12}}>Sem NFs com saldo do material {previewOleoEncimagem.codigo_material}</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {previewOleoEncimagem.saldoInsuficiente && (
+              <div style={{marginTop:6, marginBottom:8, padding:'8px 12px', background:'rgba(255,77,109,0.1)', borderRadius:6, fontSize:12, color:'var(--danger)'}}>
+                ⚠ Saldo insuficiente do óleo de encimagem ({previewOleoEncimagem.codigo_material}). Faltam {fmt(previewOleoEncimagem.faltando)} kg.
+              </div>
+            )}
+          </>
+        )}
 
         {/* Seção companion — apenas para material 135612 */}
         {isEsp135612 && previewsCompanion?.length > 0 && (
@@ -208,7 +251,8 @@ function ConfirmacaoModal({ form, preview, previewsCompanion, onConfirm, onCance
 function SucessoModal({ ultimaSaida, onClose, onPDF }) {
   const s            = ultimaSaida.saida
   const alocComp     = ultimaSaida.alocacoesCompanion || []
-  const isEsp135612  = s.codigo_material === MATERIAL_ESPECIAL_135612.codigo
+  const isEsp135612  = s.tipo_companion === 'rhodia_135612' || (s.codigo_material === MATERIAL_ESPECIAL_135612.codigo && s.tipo_companion !== 'oleo_encimagem_nilit')
+  const isOleoNilit  = s.tipo_companion === 'oleo_encimagem_nilit'
   const percAbatPct  = s.percentual_abatimento ? `${(s.percentual_abatimento * 100).toFixed(1).replace('.', ',')}%` : '3,5%'
 
   // Agrupa companion por material
@@ -259,7 +303,7 @@ function SucessoModal({ ultimaSaida, onClose, onPDF }) {
         <div style={{fontSize:12, fontWeight:600, color:'var(--blue-200)', marginBottom:10, textTransform:'uppercase', letterSpacing:'0.04em'}}>
           Alocações FIFO — Mat. {s.codigo_material}
         </div>
-        <div className="table-wrap" style={{marginBottom: isEsp135612 && alocComp.length ? 16 : 0}}>
+        <div className="table-wrap" style={{marginBottom: ((isEsp135612 || isOleoNilit) && alocComp.length) ? 16 : 0}}>
           <table>
             <thead><tr><th>NF</th><th>Emissão</th><th className="td-right">Debitado (kg)</th></tr></thead>
             <tbody>
@@ -273,6 +317,29 @@ function SucessoModal({ ultimaSaida, onClose, onPDF }) {
             </tbody>
           </table>
         </div>
+
+        {/* Seção Óleo de Encimagem (Nilit) — débito do material 23033 */}
+        {isOleoNilit && alocComp.length > 0 && (
+          <>
+            <div style={{fontSize:12, fontWeight:600, color:'var(--warn)', margin:'16px 0 10px', textTransform:'uppercase', letterSpacing:'0.04em'}}>
+              Óleo de Encimagem ({percAbatPct}) — Mat. {MATERIAL_OLEO_ENCIMAGEM_NILIT.codigo} {MATERIAL_OLEO_ENCIMAGEM_NILIT.descricao} — {fmt(s.volume_abatimento_kg ?? alocComp.reduce((a,c) => a + Number(c.volume_alocado_kg), 0))} kg
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>NF</th><th>Emissão</th><th className="td-right">Debitado (kg)</th></tr></thead>
+                <tbody>
+                  {alocComp.map((a, i) => (
+                    <tr key={i}>
+                      <td className="td-mono">{a.numero_nf}</td>
+                      <td>{a.data_emissao ? format(new Date(a.data_emissao), 'dd/MM/yyyy') : '—'}</td>
+                      <td className="td-right td-mono">{fmt(a.volume_alocado_kg)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
 
         {/* Seção companion — apenas 135612 */}
         {isEsp135612 && alocComp.length > 0 && (
@@ -539,7 +606,7 @@ export default function SaidaPage() {
     if (saldoInsuficiente) {
       toast(`Saldo insuficiente! Disponível para este material/lote: ${fmt(totalSaldo)} kg`, 'error'); return
     }
-    const { preview, previewsCompanion } = await previewFIFO(volumeAbatido, {
+    const { preview, previewsCompanion, previewOleoEncimagem } = await previewFIFO(volumeAbatido, {
       codigoMaterial:           form.codigo_material,
       lotePoy:                  form.lote_poy,
       unidadeId:                unidadeAtiva || '',
@@ -547,9 +614,14 @@ export default function SaidaPage() {
       volumeAbatimentoOverride: isEspecial135612 ? volumeAbatimento : null,
       percentualBase,
       loteDigitos,
+      tipoSaida:                form.tipo_saida,
       colecoes,
     })
-    setConfirmacao({ preview, previewsCompanion })
+    if (previewOleoEncimagem?.saldoInsuficiente) {
+      toast(`Saldo insuficiente do óleo de encimagem (${previewOleoEncimagem.codigo_material}). Faltam ${fmt(previewOleoEncimagem.faltando)} kg.`, 'error')
+      return
+    }
+    setConfirmacao({ preview, previewsCompanion, previewOleoEncimagem })
   }
 
   const handleConfirmar = async () => {
@@ -1222,6 +1294,7 @@ export default function SaidaPage() {
           form={form}
           preview={confirmacao.preview}
           previewsCompanion={confirmacao.previewsCompanion}
+          previewOleoEncimagem={confirmacao.previewOleoEncimagem}
           onConfirm={handleConfirmar}
           onCancel={() => setConfirmacao(null)}
           loading={loading}

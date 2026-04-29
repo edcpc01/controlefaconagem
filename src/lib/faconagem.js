@@ -49,6 +49,21 @@ export const MATERIAL_ESPECIAL_135612 = {
   ],
 }
 
+// Regra Nilit: o abatimento (% configurado) é debitado das NFs do material 23033 (STANTEX® UNF)
+// como "Óleo de Encimagem". Aplica-se a saídas POY (matérias-primas) com abatimento,
+// exceto quando o próprio material da saída é o 23033 ou um insumo.
+export const MATERIAL_OLEO_ENCIMAGEM_NILIT = {
+  codigo: '23033',
+  descricao: 'STANTEX® UNF',
+}
+
+export function isOleoEncimagemNilitAplicavel(colecoes, codigoMaterial, tipoMaterial) {
+  if (colecoes?.nf_entrada !== 'nf_entrada_nilit') return false
+  if (codigoMaterial === MATERIAL_OLEO_ENCIMAGEM_NILIT.codigo) return false
+  if (tipoMaterial === 'insumo') return false
+  return true
+}
+
 // percentualBase: valor configurado pelo admin (ex: 0.015). Se omitido, usa PERCENTUAL_ABATIMENTO.
 export function getPercentualAbatimento(codigoMaterial, percentualBase) {
   if (codigoMaterial === MATERIAL_ESPECIAL_135612.codigo) return MATERIAL_ESPECIAL_135612.percentual_abatimento
@@ -343,7 +358,7 @@ export async function criarNFsEntradaLote(itens, usuario, colecoes = COLECOES_PA
 // PREVIEW FIFO (sem gravar — usado para confirmação)
 // ─────────────────────────────────────────────────────────────────
 
-export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unidadeId = '', volumeLiquido = null, volumeAbatimentoOverride = null, percentualBase = null, loteDigitos = 4, colecoes = COLECOES_PADRAO } = {}) {
+export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unidadeId = '', volumeLiquido = null, volumeAbatimentoOverride = null, percentualBase = null, loteDigitos = 4, tipoSaida = null, colecoes = COLECOES_PADRAO } = {}) {
   const snap = await getDocs(query(collection(db, colecoes.nf_entrada), orderBy('data_emissao', 'asc')))
   const allNFs = snap.docs.map(docToObj)
 
@@ -386,6 +401,26 @@ export async function previewFIFO(volumeAbatido, { codigoMaterial, lotePoy, unid
       const { preview, saldoInsuficiente, faltando } = buildPreview(filtrarNFs(dist.codigo_material, null), volDist)
       return { ...dist, volume: volDist, volumeAbatimentoTotal: volumeAbatimento, preview, saldoInsuficiente, faltando }
     })
+  }
+
+  // Regra Nilit: óleo de encimagem (23033) — abatimento debitado das NFs do 23033 FIFO
+  if (TIPOS_COM_ABATIMENTO.includes(tipoSaida) && volumeLiquido != null && volumeLiquido > 0) {
+    const tipoMatPrincipal = (allNFs.find(nf => nf.codigo_material === codigoMaterial)?.tipo_material) || 'materia_prima'
+    if (isOleoEncimagemNilitAplicavel(colecoes, codigoMaterial, tipoMatPrincipal)) {
+      const pct = percentualBase != null ? percentualBase : PERCENTUAL_ABATIMENTO
+      const volOleo = volumeLiquido * pct
+      const nfsOleo = filtrarNFs(MATERIAL_OLEO_ENCIMAGEM_NILIT.codigo, null)
+      const { preview, saldoInsuficiente, faltando } = buildPreview(nfsOleo, volOleo)
+      resultado.previewOleoEncimagem = {
+        codigo_material: MATERIAL_OLEO_ENCIMAGEM_NILIT.codigo,
+        descricao:       MATERIAL_OLEO_ENCIMAGEM_NILIT.descricao,
+        percentual:      pct,
+        volume:          volOleo,
+        preview,
+        saldoInsuficiente,
+        faltando,
+      }
+    }
   }
 
   return resultado
@@ -446,6 +481,12 @@ export async function criarSaida(payload, usuario, colecoes = COLECOES_PADRAO) {
     throw new Error(`Saldo insuficiente. Disponível: ${saldoDisp.toFixed(4)} kg — Solicitado: ${volume_abatido_kg.toFixed(4)} kg.`)
   }
 
+  // ── Regra Nilit: óleo de encimagem 23033 — abatimento debitado das NFs do 23033 ──
+  const tipoMatPrincipal       = nfsComSaldo[0]?.tipo_material || 'materia_prima'
+  const aplicaOleoEncimagemNilit = temAbatimento && isOleoEncimagemNilitAplicavel(colecoes, codigo_material, tipoMatPrincipal)
+  const percentual_oleo_nilit  = aplicaOleoEncimagemNilit ? (percentual_base != null ? percentual_base : PERCENTUAL_ABATIMENTO) : 0
+  const volume_oleo_encimagem_kg = aplicaOleoEncimagemNilit ? volume_liquido_kg * percentual_oleo_nilit : 0
+
   // ── Regra especial 135612: alocar o abatimento (3,5%) nos materiais companion ──
   // nfsCompanionDebits: nf_entrada_id → { saldo_original, totalDebit }
   const nfsCompanionDebits = {}
@@ -481,9 +522,42 @@ export async function criarSaida(payload, usuario, colecoes = COLECOES_PADRAO) {
     }
   }
 
+  // ── Regra Nilit: alocar óleo de encimagem nas NFs do 23033 (FIFO) ──
+  if (aplicaOleoEncimagemNilit && volume_oleo_encimagem_kg > 0) {
+    const snapOleo  = await getDocs(query(collection(db, colecoes.nf_entrada), orderBy('data_emissao', 'asc')))
+    const nfsOleo   = snapOleo.docs.map(docToObj).filter(nf => {
+      if (Number(nf.volume_saldo_kg) <= 0.001) return false
+      if (unidade_id && (nf.unidade_id || '') !== unidade_id) return false
+      return nf.codigo_material === MATERIAL_OLEO_ENCIMAGEM_NILIT.codigo
+    })
+    let restOleo = volume_oleo_encimagem_kg
+    for (const nf of nfsOleo) {
+      if (restOleo <= 0) break
+      const alocar = Math.min(Number(nf.volume_saldo_kg), restOleo)
+      alocacoesCompanion.push({
+        nf_entrada_id: nf.id, numero_nf: nf.numero_nf, data_emissao: nf.data_emissao,
+        volume_alocado_kg: alocar, codigo_material: MATERIAL_OLEO_ENCIMAGEM_NILIT.codigo,
+      })
+      if (!nfsCompanionDebits[nf.id]) nfsCompanionDebits[nf.id] = { saldo_original: Number(nf.volume_saldo_kg), totalDebit: 0 }
+      nfsCompanionDebits[nf.id].totalDebit += alocar
+      restOleo -= alocar
+    }
+    if (restOleo > 0.01) {
+      const saldoDisp = nfsOleo.reduce((a, n) => a + Number(n.volume_saldo_kg), 0)
+      throw new Error(`Saldo insuficiente do óleo de encimagem (${MATERIAL_OLEO_ENCIMAGEM_NILIT.codigo} ${MATERIAL_OLEO_ENCIMAGEM_NILIT.descricao}). Disponível: ${saldoDisp.toFixed(4)} kg — Necessário: ${volume_oleo_encimagem_kg.toFixed(4)} kg.`)
+    }
+  }
+
   const now      = Timestamp.now()
   const batch    = writeBatch(db)
   const saidaRef = doc(collection(db, colecoes.saida))
+
+  const tipo_companion = isEspecial135612 && volume_abatimento_kg > 0
+    ? 'rhodia_135612'
+    : (aplicaOleoEncimagemNilit && volume_oleo_encimagem_kg > 0 ? 'oleo_encimagem_nilit' : null)
+  const volume_companion_kg = tipo_companion === 'rhodia_135612'
+    ? volume_abatimento_kg
+    : (tipo_companion === 'oleo_encimagem_nilit' ? volume_oleo_encimagem_kg : 0)
 
   batch.set(saidaRef, {
     romaneio_microdata,
@@ -497,7 +571,8 @@ export async function criarSaida(payload, usuario, colecoes = COLECOES_PADRAO) {
     quantidade:       quantidade || null,
     volume_abatido_kg,
     percentual_abatimento,
-    volume_abatimento_kg: volume_abatimento_kg || null,   // só 135612
+    volume_abatimento_kg: volume_companion_kg || null,   // 135612 (Rhodia) ou óleo encimagem (Nilit)
+    tipo_companion,                                       // 'rhodia_135612' | 'oleo_encimagem_nilit' | null
     unidade_id,
     usuario_email: usuario?.email || '',
     criado_em: now,
@@ -554,7 +629,8 @@ export async function criarSaida(payload, usuario, colecoes = COLECOES_PADRAO) {
       id: saidaRef.id, romaneio_microdata, codigo_material, lote_poy, lote_acabado,
       tipo_saida, volume_liquido_kg, volume_bruto_kg, quantidade,
       volume_abatido_kg, percentual_abatimento,
-      volume_abatimento_kg: volume_abatimento_kg || null,
+      volume_abatimento_kg: volume_companion_kg || null,
+      tipo_companion,
       unidade_id,
       criado_em: now.toDate().toISOString()
     },
@@ -780,7 +856,8 @@ function _buildRomaneioPDF(saida, alocacoes, config = {}, alocacoesCompanion = [
 
   const percAbatPDF   = saida.percentual_abatimento || PERCENTUAL_ABATIMENTO
   const percLblPDF    = `${(percAbatPDF * 100).toFixed(1).replace('.', ',')}%`
-  const isEsp135612PDF = (saida.codigo_material || saida.codigo_produto) === MATERIAL_ESPECIAL_135612.codigo
+  const isEsp135612PDF = (saida.tipo_companion === 'rhodia_135612') || ((saida.codigo_material || saida.codigo_produto) === MATERIAL_ESPECIAL_135612.codigo && saida.tipo_companion !== 'oleo_encimagem_nilit')
+  const isOleoNilitPDF = saida.tipo_companion === 'oleo_encimagem_nilit'
 
   if (temAbat) {
     pdoc.setFont('helvetica', 'bold'); pdoc.setFontSize(9); pdoc.setTextColor(...DARK)
@@ -877,6 +954,41 @@ function _buildRomaneioPDF(saida, alocacoes, config = {}, alocacoesCompanion = [
       footStyles:         { fillColor: [255, 240, 200], textColor: DARK, fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [255, 248, 230] },
       columnStyles:       { 3: { halign: 'right' } },
+    })
+  }
+
+  // ── Tabela óleo de encimagem (Nilit) — débito do material 23033 ──────────
+  if (isOleoNilitPDF && alocacoesCompanion.length > 0) {
+    y = pdoc.lastAutoTable.finalY + 8
+
+    const AMBER = [180, 100, 0]
+    pdoc.setFillColor(...AMBER); pdoc.setTextColor(...WHITE)
+    pdoc.setFontSize(9); pdoc.setFont('helvetica', 'bold')
+    pdoc.roundedRect(14, y, W - 28, 9, 2, 2, 'F')
+    const volOleoTotal = saida.volume_abatimento_kg
+      ? fmtKg(saida.volume_abatimento_kg)
+      : fmtKg(alocacoesCompanion.reduce((s, a) => s + Number(a.volume_alocado_kg), 0))
+    pdoc.text(`ÓLEO DE ENCIMAGEM (${percLblPDF}) — ${MATERIAL_OLEO_ENCIMAGEM_NILIT.codigo} ${MATERIAL_OLEO_ENCIMAGEM_NILIT.descricao} — ${volOleoTotal}`, W / 2, y + 6, { align: 'center' })
+    y += 11
+
+    autoTable(pdoc, {
+      startY: y,
+      margin: { left: 14, right: 14 },
+      head: [['NF de Entrada', 'Data de Emissão', 'Volume Debitado (kg)']],
+      body: alocacoesCompanion.map(a => [
+        a.numero_nf,
+        a.data_emissao ? format(new Date(a.data_emissao), 'dd/MM/yyyy') : '—',
+        fmtKg(a.volume_alocado_kg),
+      ]),
+      foot: [[
+        { content: 'TOTAL', colSpan: 2, styles: { fontStyle: 'bold' } },
+        { content: fmtKg(alocacoesCompanion.reduce((s, a) => s + Number(a.volume_alocado_kg), 0)), styles: { fontStyle: 'bold' } },
+      ]],
+      headStyles:         { fillColor: [180, 100, 0], textColor: WHITE, fontStyle: 'bold', fontSize: 9 },
+      bodyStyles:         { textColor: [30, 30, 60], fontSize: 9 },
+      footStyles:         { fillColor: [255, 240, 200], textColor: DARK, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [255, 248, 230] },
+      columnStyles:       { 2: { halign: 'right' } },
     })
   }
 
