@@ -507,6 +507,8 @@ export default function SaidaPage() {
           descricao_material: nfs.find(n => n.codigo_material === l.codigo_material.trim())?.descricao_material || '',
           volume_liquido_kg: volLiq,
           volume_abatido_kg: res.saida.volume_abatido_kg,
+          alocacoes:         res.alocacoes || [],
+          alocacoesCompanion: res.alocacoesCompanion || [],
         })
       } catch (e) {
         erros.push({ material: l.codigo_material, erro: e.message })

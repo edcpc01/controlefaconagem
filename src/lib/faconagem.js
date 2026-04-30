@@ -1109,6 +1109,89 @@ export function gerarMultiSaidaPDF(dados, config = {}) {
     },
   })
 
+  // ── Detalhamento FIFO — NFs de origem por item ──
+  const fifoRows = []
+  let fifoTotal = 0
+  for (const it of dados.itens) {
+    for (const a of (it.alocacoes || [])) {
+      fifoRows.push([
+        it.codigo_material || '—',
+        it.lote_poy || '—',
+        a.numero_nf,
+        a.data_emissao ? format(new Date(a.data_emissao), 'dd/MM/yyyy') : '—',
+        fmtVol(a.volume_alocado_kg),
+      ])
+      fifoTotal += Number(a.volume_alocado_kg) || 0
+    }
+  }
+
+  if (fifoRows.length > 0) {
+    let yFifo = pdoc.lastAutoTable.finalY + 8
+    pdoc.setFillColor(...DARK); pdoc.setTextColor(...WHITE)
+    pdoc.setFontSize(10); pdoc.setFont('helvetica', 'bold')
+    pdoc.roundedRect(14, yFifo, W - 28, 9, 2, 2, 'F')
+    pdoc.text('DETALHAMENTO FIFO — NFs DE ORIGEM POR ITEM', W / 2, yFifo + 6, { align: 'center' })
+    yFifo += 11
+
+    autoTable(pdoc, {
+      startY: yFifo,
+      margin: { left: 14, right: 14 },
+      head: [['Cód. Material', 'Lote POY', 'NF de Entrada', 'Emissão', 'Vol. Debitado']],
+      body: fifoRows,
+      foot: [[
+        { content: 'TOTAL', colSpan: 4, styles: { fontStyle: 'bold' } },
+        { content: fmtVol(fifoTotal), styles: { fontStyle: 'bold', halign: 'right' } },
+      ]],
+      styles:     { fontSize: 8, cellPadding: 3 },
+      headStyles: { fillColor: MED, textColor: WHITE, fontStyle: 'bold' },
+      footStyles: { fillColor: LIGHT, textColor: DARK },
+      alternateRowStyles: { fillColor: [245, 249, 255] },
+      columnStyles: {
+        0: { fontStyle: 'bold', cellWidth: 28 },
+        1: { cellWidth: 22 },
+        2: { cellWidth: 32, fontStyle: 'bold' },
+        3: { cellWidth: 26 },
+        4: { halign: 'right', cellWidth: 'auto' },
+      },
+    })
+  }
+
+  // ── Detalhamento Óleo de Encimagem (Nilit) ──
+  const oleoRows = []
+  for (const it of dados.itens) {
+    for (const a of (it.alocacoesCompanion || [])) {
+      if ((a.codigo_material_companion || a.codigo_material) === MATERIAL_OLEO_ENCIMAGEM_NILIT.codigo) {
+        oleoRows.push([
+          it.codigo_material || '—',
+          a.numero_nf,
+          a.data_emissao ? format(new Date(a.data_emissao), 'dd/MM/yyyy') : '—',
+          fmtVol(a.volume_alocado_kg),
+        ])
+      }
+    }
+  }
+
+  if (oleoRows.length > 0) {
+    let yOleo = pdoc.lastAutoTable.finalY + 8
+    const AMBER = [180, 100, 0]
+    pdoc.setFillColor(...AMBER); pdoc.setTextColor(...WHITE)
+    pdoc.setFontSize(9); pdoc.setFont('helvetica', 'bold')
+    pdoc.roundedRect(14, yOleo, W - 28, 9, 2, 2, 'F')
+    pdoc.text(`ÓLEO DE ENCIMAGEM — ${MATERIAL_OLEO_ENCIMAGEM_NILIT.codigo} ${MATERIAL_OLEO_ENCIMAGEM_NILIT.descricao}`, W / 2, yOleo + 6, { align: 'center' })
+    yOleo += 11
+
+    autoTable(pdoc, {
+      startY: yOleo,
+      margin: { left: 14, right: 14 },
+      head: [['Item (Cód. Mat.)', 'NF de Entrada', 'Emissão', 'Vol. Debitado']],
+      body: oleoRows,
+      styles:     { fontSize: 8, cellPadding: 3 },
+      headStyles: { fillColor: AMBER, textColor: WHITE, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [255, 248, 230] },
+      columnStyles: { 3: { halign: 'right' } },
+    })
+  }
+
   pdoc.save(`romaneio_multi_${dados.romaneio_microdata}_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`)
 }
 
