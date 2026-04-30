@@ -777,6 +777,25 @@ export function exportarExcel(nfs, saidas) {
 // ─────────────────────────────────────────────────────────────────
 
 function _buildRomaneioPDF(saida, alocacoes, config = {}, alocacoesCompanion = []) {
+  // Para saídas de insumo: usar layout multi-saída (mesmo formato do romaneio múltiplo)
+  if (saida.tipo_saida === 'insumo') {
+    return _buildMultiSaidaPDF({
+      romaneio_microdata: saida.romaneio_microdata,
+      tipo_saida:         saida.tipo_saida,
+      lote_acabado:       saida.lote_acabado || '',
+      criado_em:          saida.criado_em,
+      itens: [{
+        codigo_material:    saida.codigo_material || saida.codigo_produto || '—',
+        lote_poy:           saida.lote_poy || '',
+        descricao_material: saida.descricao_material || '—',
+        volume_liquido_kg:  saida.volume_liquido_kg,
+        volume_abatido_kg:  saida.volume_abatido_kg,
+        alocacoes,
+        alocacoesCompanion,
+      }],
+    }, config)
+  }
+
   const pdoc  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   const W     = 210
   const DARK  = [15, 40, 80]
@@ -1025,9 +1044,9 @@ export function gerarRomaneioBase64(saida, alocacoes, config = {}, alocacoesComp
 // ROMANEIO MULTI-SAÍDA PDF (1 romaneio com múltiplos materiais)
 // ─────────────────────────────────────────────────────────────────
 
-export function gerarMultiSaidaPDF(dados, config = {}) {
+function _buildMultiSaidaPDF(dados, config = {}) {
   // dados: { romaneio_microdata, tipo_saida, lote_acabado, itens, criado_em }
-  // itens: [{ codigo_material, lote_poy, descricao_material, volume_liquido_kg, volume_abatido_kg }]
+  // itens: [{ codigo_material, lote_poy, descricao_material, volume_liquido_kg, volume_abatido_kg, alocacoes, alocacoesCompanion }]
   const pdoc  = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   const W     = 210
   const DARK  = [15, 40, 80]
@@ -1041,6 +1060,7 @@ export function gerarMultiSaidaPDF(dados, config = {}) {
   const fmtVol   = n => n != null ? Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'
   const totalLiq = dados.itens.reduce((a, i) => a + Number(i.volume_liquido_kg || 0), 0)
   const totalFin = dados.itens.reduce((a, i) => a + Number(i.volume_abatido_kg || i.volume_liquido_kg || 0), 0)
+  const tituloPDF = dados.itens.length === 1 ? 'ROMANEIO DE SAÍDA' : 'ROMANEIO DE SAÍDA MÚLTIPLA'
 
   // ── Cabeçalho ──
   const headerH = 36
@@ -1053,7 +1073,7 @@ export function gerarMultiSaidaPDF(dados, config = {}) {
   pdoc.setFontSize(16); pdoc.setFont('helvetica', 'bold')
   pdoc.text('CORRADI MAZZER — FAÇONAGEM', W / 2, 13, { align: 'center' })
   pdoc.setFontSize(10); pdoc.setFont('helvetica', 'normal')
-  pdoc.text('ROMANEIO DE SAÍDA MÚLTIPLA', W / 2, 21, { align: 'center' })
+  pdoc.text(tituloPDF, W / 2, 21, { align: 'center' })
   pdoc.setFontSize(8)
   pdoc.text(`Emitido: ${format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}`, W / 2, 29, { align: 'center' })
 
@@ -1192,6 +1212,11 @@ export function gerarMultiSaidaPDF(dados, config = {}) {
     })
   }
 
+  return pdoc
+}
+
+export function gerarMultiSaidaPDF(dados, config = {}) {
+  const pdoc = _buildMultiSaidaPDF(dados, config)
   pdoc.save(`romaneio_multi_${dados.romaneio_microdata}_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`)
 }
 

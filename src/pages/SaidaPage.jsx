@@ -667,7 +667,11 @@ export default function SaidaPage() {
   }
 
   const handleGerarPDF = (saida, alocacoes, alocacoesCompanion = []) => {
-    gerarRomaneioPDF(saida, alocacoes, config, alocacoesCompanion)
+    const cod = saida.codigo_material || saida.codigo_produto
+    const descricao_material = saida.descricao_material
+      || nfs.find(n => n.codigo_material === cod)?.descricao_material
+      || ''
+    gerarRomaneioPDF({ ...saida, descricao_material }, alocacoes, config, alocacoesCompanion)
     toast('Romaneio PDF gerado!')
   }
 
@@ -677,8 +681,12 @@ export default function SaidaPage() {
     if (!user?.email) { toast('E-mail do usuário não encontrado.', 'error'); return }
     setEmailLoading(true)
     try {
+      const codMat = ultimaSaida.saida.codigo_material || ultimaSaida.saida.codigo_produto
+      const descricao_material = ultimaSaida.saida.descricao_material
+        || nfs.find(n => n.codigo_material === codMat)?.descricao_material
+        || ''
       const pdfBase64 = gerarRomaneioBase64(
-        ultimaSaida.saida,
+        { ...ultimaSaida.saida, descricao_material },
         ultimaSaida.alocacoes,
         config,
         ultimaSaida.alocacoesCompanion || []
