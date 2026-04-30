@@ -3,7 +3,8 @@ import {
   listarSaidas, criarSaida, deletarSaida, listarNFsEntrada, previewFIFO,
   TIPOS_SAIDA, TIPOS_COM_ABATIMENTO,
   calcularVolumeAbatido, getPercentualAbatimento, MATERIAL_ESPECIAL_135612, MATERIAL_OLEO_ENCIMAGEM_NILIT,
-  gerarRomaneioPDF, gerarRomaneioBase64, gerarMultiSaidaPDF, exportarExcel, carregarConfig
+  gerarRomaneioPDF, gerarRomaneioBase64, gerarMultiSaidaPDF, exportarExcel, carregarConfig,
+  carregarMapaSankhia,
 } from '../lib/faconagem'
 import { useAuth } from '../lib/AuthContext'
 import { useUser } from '../lib/UserContext'
@@ -41,7 +42,7 @@ function tipoBadge(tipo) {
 const fmt = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 // ── Modal de Confirmação FIFO ─────────────────────────────────────────────
-function ConfirmacaoModal({ form, preview, previewsCompanion, previewOleoEncimagem, onConfirm, onCancel, loading, percentualBase }) {
+function ConfirmacaoModal({ form, preview, previewsCompanion, previewOleoEncimagem, onConfirm, onCancel, loading, percentualBase, codigoSankhia }) {
   const volumeLiq    = parseFloat(form.volume_liquido_kg) || 0
   const temAbat      = TIPOS_COM_ABATIMENTO.includes(form.tipo_saida)
   const isEsp135612  = form.codigo_material === MATERIAL_ESPECIAL_135612.codigo
@@ -103,7 +104,9 @@ function ConfirmacaoModal({ form, preview, previewsCompanion, previewOleoEncimag
           )}
           <div style={{borderTop:'1px solid var(--border)', paddingTop:8, marginTop:4}}>
             <div className="abatimento-row">
-              <span className="abatimento-label" style={{fontWeight:700}}>Volume a Debitar do Estoque (Mat. {form.codigo_material})</span>
+              <span className="abatimento-label" style={{fontWeight:700}}>
+                Volume a Debitar do Estoque (Mat. {form.codigo_material}{codigoSankhia ? ` · SK ${codigoSankhia}` : ''})
+              </span>
               <span className="abatimento-value highlight">{fmt(volumeFinal)} kg</span>
             </div>
           </div>
@@ -248,7 +251,7 @@ function ConfirmacaoModal({ form, preview, previewsCompanion, previewOleoEncimag
 }
 
 // ── Modal de Sucesso ───────────────────────────────────────────────────────
-function SucessoModal({ ultimaSaida, onClose, onPDF }) {
+function SucessoModal({ ultimaSaida, onClose, onPDF, codigoSankhia }) {
   const s            = ultimaSaida.saida
   const alocComp     = ultimaSaida.alocacoesCompanion || []
   const isEsp135612  = s.tipo_companion === 'rhodia_135612' || (s.codigo_material === MATERIAL_ESPECIAL_135612.codigo && s.tipo_companion !== 'oleo_encimagem_nilit')
@@ -295,7 +298,7 @@ function SucessoModal({ ultimaSaida, onClose, onPDF }) {
             </div>
           )}
           <div className="abatimento-row">
-            <span className="abatimento-label">Volume Debitado do Estoque (Mat. {s.codigo_material})</span>
+            <span className="abatimento-label">Volume Debitado do Estoque (Mat. {s.codigo_material}{codigoSankhia ? ` · SK ${codigoSankhia}` : ''})</span>
             <span className="abatimento-value highlight">{fmt(s.volume_abatido_kg)} kg</span>
           </div>
         </div>
@@ -399,6 +402,7 @@ export default function SaidaPage() {
   const [ultimaSaida, setUltimaSaida] = useState(null)
   const [confirmacao, setConfirmacao] = useState(null)
   const [config, setConfig]           = useState({})
+  const [sankhiaMap, setSankhiaMap]   = useState(new Map())
   const [confirmDeleteSaida, setConfirmDeleteSaida] = useState(null)
   const [emailLoading, setEmailLoading] = useState(false)
   // Override manual do abatimento para material 135612
@@ -503,6 +507,7 @@ export default function SaidaPage() {
         }, user, colecoes)
         resultItens.push({
           codigo_material:   l.codigo_material.trim(),
+          codigo_sankhia:    sankhiaDe(l.codigo_material.trim()),
           lote_poy:          l.lote_poy?.trim() || '',
           descricao_material: nfs.find(n => n.codigo_material === l.codigo_material.trim())?.descricao_material || '',
           volume_liquido_kg: volLiq,
@@ -524,7 +529,13 @@ export default function SaidaPage() {
     if (erros.length > 0) toast(`⚠️ ${erros.length} erro(s): ${erros.map(e => e.material).join(', ')}`, 'error')
   }
 
-  useEffect(() => { load(); carregarConfig(colecoes).then(setConfig) }, [unidadeAtiva, operacaoAtiva])
+  useEffect(() => {
+    load()
+    carregarConfig(colecoes).then(setConfig)
+    carregarMapaSankhia(colecoes).then(setSankhiaMap).catch(() => setSankhiaMap(new Map()))
+  }, [unidadeAtiva, operacaoAtiva])
+
+  const sankhiaDe = (codigoMaterial) => sankhiaMap.get(String(codigoMaterial || ''))?.codigo_sankhia || ''
 
   // Monitor online/offline
   useEffect(() => {
@@ -671,7 +682,8 @@ export default function SaidaPage() {
     const descricao_material = saida.descricao_material
       || nfs.find(n => n.codigo_material === cod)?.descricao_material
       || ''
-    gerarRomaneioPDF({ ...saida, descricao_material }, alocacoes, config, alocacoesCompanion)
+    const codigo_sankhia = saida.codigo_sankhia || sankhiaDe(cod)
+    gerarRomaneioPDF({ ...saida, descricao_material, codigo_sankhia }, alocacoes, config, alocacoesCompanion)
     toast('Romaneio PDF gerado!')
   }
 
@@ -685,8 +697,9 @@ export default function SaidaPage() {
       const descricao_material = ultimaSaida.saida.descricao_material
         || nfs.find(n => n.codigo_material === codMat)?.descricao_material
         || ''
+      const codigo_sankhia = ultimaSaida.saida.codigo_sankhia || sankhiaDe(codMat)
       const pdfBase64 = gerarRomaneioBase64(
-        { ...ultimaSaida.saida, descricao_material },
+        { ...ultimaSaida.saida, descricao_material, codigo_sankhia },
         ultimaSaida.alocacoes,
         config,
         ultimaSaida.alocacoesCompanion || []
@@ -839,7 +852,14 @@ export default function SaidaPage() {
               value={form.romaneio_microdata} onChange={e => set('romaneio_microdata', e.target.value)} />
           </div>
           <div className="form-group">
-            <label className="form-label">Código do Material *</label>
+            <label className="form-label" style={{display:'flex', alignItems:'center', justifyContent:'space-between', gap:8}}>
+              <span>Código do Material *</span>
+              {form.codigo_material && (
+                sankhiaDe(form.codigo_material)
+                  ? <span style={{fontSize:10, background:'rgba(34,85,184,0.15)', color:'var(--accent)', borderRadius:4, padding:'1px 6px', fontWeight:700, letterSpacing:'0.02em'}} title="Cód. Sankhia">SK {sankhiaDe(form.codigo_material)}</span>
+                  : <span style={{fontSize:10, color:'var(--warn)', fontWeight:600}} title="Material sem Cód. Sankhia cadastrado">⚠ sem SK</span>
+              )}
+            </label>
             <input type="text" className="form-input" placeholder="Ex: 140911"
               value={form.codigo_material} onChange={e => set('codigo_material', e.target.value)} />
           </div>
@@ -1166,6 +1186,7 @@ export default function SaidaPage() {
                   <thead>
                     <tr style={{background:'rgba(255,255,255,0.04)'}}>
                       <th style={{padding:'6px 10px', textAlign:'left', color:'var(--text-dim)'}}>Cód. Material</th>
+                      <th style={{padding:'6px 10px', textAlign:'left', color:'var(--text-dim)'}}>Cód. Sankhia</th>
                       <th style={{padding:'6px 10px', textAlign:'left', color:'var(--text-dim)'}}>Lote POY</th>
                       <th style={{padding:'6px 10px', textAlign:'left', color:'var(--text-dim)'}}>Descrição</th>
                       <th style={{padding:'6px 10px', textAlign:'right', color:'var(--text-dim)'}}>Volume</th>
@@ -1176,6 +1197,7 @@ export default function SaidaPage() {
                     {multiResultado.itens.map((it, i) => (
                       <tr key={i} style={{borderBottom:'1px solid rgba(255,255,255,0.05)'}}>
                         <td style={{padding:'6px 10px', fontFamily:'monospace', fontWeight:700}}>{it.codigo_material}</td>
+                        <td style={{padding:'6px 10px', fontFamily:'monospace', color: it.codigo_sankhia ? 'var(--accent)' : 'var(--text-dim)'}}>{it.codigo_sankhia || '—'}</td>
                         <td style={{padding:'6px 10px', fontFamily:'monospace'}}>{it.lote_poy || '—'}</td>
                         <td style={{padding:'6px 10px', fontSize:12, color:'var(--text-dim)'}}>{it.descricao_material || '—'}</td>
                         <td style={{padding:'6px 10px', textAlign:'right', fontFamily:'monospace'}}>{fmt(it.volume_liquido_kg)}</td>
@@ -1309,6 +1331,7 @@ export default function SaidaPage() {
           onCancel={() => setConfirmacao(null)}
           loading={loading}
           percentualBase={percentualBase}
+          codigoSankhia={sankhiaDe(form.codigo_material)}
         />
       )}
 
@@ -1317,6 +1340,7 @@ export default function SaidaPage() {
           ultimaSaida={ultimaSaida}
           onClose={() => setUltimaSaida(null)}
           onPDF={() => handleGerarPDF(ultimaSaida.saida, ultimaSaida.alocacoes, ultimaSaida.alocacoesCompanion || [])}
+          codigoSankhia={sankhiaDe(ultimaSaida.saida.codigo_material || ultimaSaida.saida.codigo_produto)}
         />
       )}
 

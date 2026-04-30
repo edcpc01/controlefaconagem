@@ -20,6 +20,7 @@ export const COLECOES = {
     inventario:     'inventario',
     nf_historico:   'nf_historico',
     config:         'config',
+    codigo_sankhia: 'codigo_sankhia',
   },
   nilit: {
     nf_entrada:     'nf_entrada_nilit',
@@ -29,6 +30,7 @@ export const COLECOES = {
     inventario:     'inventario_nilit',
     nf_historico:   'nf_historico_nilit',
     config:         'config_nilit',
+    codigo_sankhia: 'codigo_sankhia_nilit',
   },
 }
 

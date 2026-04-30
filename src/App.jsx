@@ -17,6 +17,7 @@ import KpisPage       from './pages/KpisPage'
 import InventarioPage from './pages/InventarioPage'
 import MapaCalorPage   from './pages/MapaCalorPage'
 import RelatoriosPage  from './pages/RelatoriosPage'
+import CadastroSankhiaPage from './pages/CadastroSankhiaPage'
 import './index.css'
 
 // ── PWA Update Banner ────────────────────────────────────────────
@@ -127,6 +128,7 @@ const NAV_BASE = [
   { to: '/inventario',  label: 'Inventário', icon: '🔍' },
   { to: '/mapa',        label: 'Mapa',       icon: '🌡️' },
   { to: '/relatorios',  label: 'Relatórios', icon: '📑' },
+  { to: '/sankhia',     label: 'Sankhia',    icon: '🔗' },
   { to: '/log',         label: 'Histórico',  icon: '📋' },
   { to: '/config',      label: 'Config',     icon: '⚙' },
 ]
@@ -254,6 +256,7 @@ function Layout({ children }) {
     { to: '/inventario',  label: 'Inventário', icon: '🔍' },
     { to: '/mapa',        label: 'Mapa',       icon: '🌡️' },
     { to: '/relatorios',  label: 'Relatórios', icon: '📑' },
+    { to: '/sankhia',     label: 'Sankhia',    icon: '🔗' },
     { to: '/log',         label: 'Histórico',  icon: '📋' },
     { to: '/config',      label: 'Config',     icon: '⚙' },
   ]
@@ -463,6 +466,7 @@ function ProtectedApp() {
           <Route path="/inventario" element={<InventarioPage />} />
           <Route path="/mapa"       element={<MapaCalorPage />} />
           <Route path="/relatorios" element={<RelatoriosPage />} />
+          <Route path="/sankhia"    element={<CadastroSankhiaPage />} />
           <Route path="/log"      element={<LogPage />} />
           <Route path="/config"   element={isSupervisorCorradi ? <Navigate to="/" replace /> : <ConfigPage />} />
           <Route path="/usuarios" element={isSupervisor || isSupervisorCorradi ? <Navigate to="/" replace /> : <UsersPage />} />

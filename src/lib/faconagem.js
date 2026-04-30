@@ -18,6 +18,7 @@ export const COLECOES_PADRAO = {
   inventario:     'inventario',
   nf_historico:   'nf_historico',
   config:         'config',
+  codigo_sankhia: 'codigo_sankhia',
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -163,6 +164,124 @@ export async function salvarConfig(payload, colecoes = COLECOES_PADRAO) {
 export async function carregarConfig(colecoes = COLECOES_PADRAO) {
   const snap = await getDoc(doc(db, colecoes.config, 'app'))
   return snap.exists() ? snap.data() : {}
+}
+
+// ─────────────────────────────────────────────────────────────────
+// CÓDIGOS SANKHIA — mapeamento código_material → código_sankhia
+// ─────────────────────────────────────────────────────────────────
+
+// Limpa "SK" prefixo do COMPLDESC (ex.: "SK21986" → "21986")
+export function normalizarCodigoNFFromSankhia(compldesc) {
+  if (compldesc == null) return ''
+  return String(compldesc).trim().replace(/^SK\s*/i, '')
+}
+
+export async function listarCodigosSankhia(colecoes = COLECOES_PADRAO) {
+  const snap = await getDocs(collection(db, colecoes.codigo_sankhia))
+  return snap.docs.map(d => ({
+    id: d.id, ...d.data(),
+    atualizado_em: tsToDateTime(d.data().atualizado_em),
+  }))
+}
+
+// Carrega como Map<codigo_material, { codigo_sankhia, descricao_sankhia, id }> para lookup rápido
+export async function carregarMapaSankhia(colecoes = COLECOES_PADRAO) {
+  const lista = await listarCodigosSankhia(colecoes)
+  const map = new Map()
+  for (const item of lista) {
+    if (item.codigo_material) map.set(String(item.codigo_material), item)
+  }
+  return map
+}
+
+// Upsert por codigo_material (uma entrada por material)
+export async function salvarCodigoSankhia(payload, usuario, colecoes = COLECOES_PADRAO) {
+  const codigoMaterial = String(payload.codigo_material || '').trim()
+  if (!codigoMaterial) throw new Error('Informe o código do material.')
+  const codigoSankhia = String(payload.codigo_sankhia || '').trim()
+  if (!codigoSankhia) throw new Error('Informe o código Sankhia.')
+
+  const now = Timestamp.now()
+  // Procura existente
+  const existente = await getDocs(query(collection(db, colecoes.codigo_sankhia), where('codigo_material', '==', codigoMaterial)))
+  const data = {
+    codigo_material:    codigoMaterial,
+    codigo_sankhia:     codigoSankhia,
+    descricao_sankhia:  payload.descricao_sankhia || '',
+    atualizado_em:      now,
+  }
+  if (!existente.empty) {
+    const ref = doc(db, colecoes.codigo_sankhia, existente.docs[0].id)
+    await setDoc(ref, data, { merge: true })
+    await registrarLog('SANKHIA_ATUALIZADO', `${codigoMaterial} → ${codigoSankhia}`, usuario, colecoes)
+    return { id: existente.docs[0].id, ...data }
+  } else {
+    const ref = await addDoc(collection(db, colecoes.codigo_sankhia), { ...data, criado_em: now })
+    await registrarLog('SANKHIA_CRIADO', `${codigoMaterial} → ${codigoSankhia}`, usuario, colecoes)
+    return { id: ref.id, ...data }
+  }
+}
+
+export async function deletarCodigoSankhia(id, usuario, colecoes = COLECOES_PADRAO) {
+  const snap = await getDoc(doc(db, colecoes.codigo_sankhia, id))
+  if (!snap.exists()) throw new Error('Mapeamento não encontrado.')
+  const data = snap.data()
+  await deleteDoc(doc(db, colecoes.codigo_sankhia, id))
+  await registrarLog('SANKHIA_EXCLUIDO', `${data.codigo_material} → ${data.codigo_sankhia}`, usuario, colecoes)
+}
+
+// Importação em lote a partir de linhas { CODPROD, COMPLDESC, DESCRPROD? }
+// Retorna { criados, atualizados, ignorados, erros }
+export async function importarCodigosSankhiaXLSX(linhas, usuario, colecoes = COLECOES_PADRAO) {
+  let criados = 0, atualizados = 0, ignorados = 0
+  const erros = []
+  // Carrega existentes uma vez para detectar criação vs atualização
+  const existentesSnap = await getDocs(collection(db, colecoes.codigo_sankhia))
+  const existentesMap = new Map() // codigo_material → docId
+  existentesSnap.docs.forEach(d => existentesMap.set(String(d.data().codigo_material), d.id))
+
+  const now = Timestamp.now()
+  const batch = writeBatch(db)
+  let ops = 0
+
+  for (const linha of linhas) {
+    const codSankhia = String(linha.CODPROD ?? linha.codprod ?? '').trim()
+    const compldesc  = String(linha.COMPLDESC ?? linha.compldesc ?? '').trim()
+    const codNF      = normalizarCodigoNFFromSankhia(compldesc)
+    const descricao  = String(linha.DESCRPROD ?? linha.descrprod ?? '').trim()
+    if (!codSankhia || !codNF) { ignorados++; continue }
+
+    const data = {
+      codigo_material:   codNF,
+      codigo_sankhia:    codSankhia,
+      descricao_sankhia: descricao,
+      atualizado_em:     now,
+    }
+
+    const docId = existentesMap.get(codNF)
+    if (docId) {
+      batch.set(doc(db, colecoes.codigo_sankhia, docId), data, { merge: true })
+      atualizados++
+    } else {
+      const newRef = doc(collection(db, colecoes.codigo_sankhia))
+      batch.set(newRef, { ...data, criado_em: now })
+      existentesMap.set(codNF, newRef.id) // evita duplicar se a planilha repetir o COMPLDESC
+      criados++
+    }
+
+    ops++
+    // Firestore limita 500 ops por batch — commita e abre nova
+    if (ops >= 450) {
+      try { await batch.commit() } catch (e) { erros.push(e.message) }
+      ops = 0
+    }
+  }
+  if (ops > 0) {
+    try { await batch.commit() } catch (e) { erros.push(e.message) }
+  }
+
+  await registrarLog('SANKHIA_IMPORT', `XLSX: ${criados} criados, ${atualizados} atualizados, ${ignorados} ignorados`, usuario, colecoes)
+  return { criados, atualizados, ignorados, erros }
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -786,6 +905,7 @@ function _buildRomaneioPDF(saida, alocacoes, config = {}, alocacoesCompanion = [
       criado_em:          saida.criado_em,
       itens: [{
         codigo_material:    saida.codigo_material || saida.codigo_produto || '—',
+        codigo_sankhia:     saida.codigo_sankhia || '',
         lote_poy:           saida.lote_poy || '',
         descricao_material: saida.descricao_material || '—',
         volume_liquido_kg:  saida.volume_liquido_kg,
@@ -843,9 +963,12 @@ function _buildRomaneioPDF(saida, alocacoes, config = {}, alocacoesCompanion = [
   }
 
   const col1 = 20, col2 = W / 2 + 4
+  const codigoMaterialDisplay = saida.codigo_sankhia
+    ? `${codigoMaterial}  (SK ${saida.codigo_sankhia})`
+    : codigoMaterial
   y += 7
   linha('Romaneio Microdata',    saida.romaneio_microdata,  col1, y)
-  linha('Código do Material',    codigoMaterial,            col2, y)
+  linha('Código do Material',    codigoMaterialDisplay,     col2, y)
   y += 14
   linha('Lote POY',              saida.lote_poy || '—',     col1, y)
   linha('Tipo de Saída',         tipoLbl,                   col2, y)
@@ -1103,16 +1226,17 @@ function _buildMultiSaidaPDF(dados, config = {}) {
   autoTable(pdoc, {
     startY: y,
     margin: { left: 14, right: 14 },
-    head: [['Cód. Material', 'Lote POY', 'Descrição', 'Volume Líq.', temAbat ? 'Vol. Debitado' : 'Volume']],
+    head: [['Cód. Material', 'Cód. Sankhia', 'Lote POY', 'Descrição', 'Volume Líq.', temAbat ? 'Vol. Debitado' : 'Volume']],
     body: dados.itens.map(it => [
       it.codigo_material || '—',
+      it.codigo_sankhia || '—',
       it.lote_poy || '—',
       it.descricao_material || '—',
       fmtVol(it.volume_liquido_kg),
       fmtVol(it.volume_abatido_kg ?? it.volume_liquido_kg),
     ]),
     foot: [[
-      { content: `Total — ${dados.itens.length} item(ns)`, colSpan: 3, styles: { fontStyle: 'bold' } },
+      { content: `Total — ${dados.itens.length} item(ns)`, colSpan: 4, styles: { fontStyle: 'bold' } },
       { content: fmtVol(totalLiq), styles: { fontStyle: 'bold', halign: 'right' } },
       { content: fmtVol(totalFin), styles: { fontStyle: 'bold', halign: 'right', textColor: MED } },
     ]],
@@ -1121,11 +1245,12 @@ function _buildMultiSaidaPDF(dados, config = {}) {
     footStyles: { fillColor: LIGHT, textColor: DARK },
     alternateRowStyles: { fillColor: [245, 249, 255] },
     columnStyles: {
-      0: { fontStyle: 'bold', cellWidth: 28 },
-      1: { cellWidth: 22 },
-      2: { cellWidth: 'auto' },
-      3: { halign: 'right', cellWidth: 28 },
-      4: { halign: 'right', cellWidth: 30 },
+      0: { fontStyle: 'bold', cellWidth: 24 },
+      1: { fontStyle: 'bold', cellWidth: 22, textColor: MED },
+      2: { cellWidth: 20 },
+      3: { cellWidth: 'auto' },
+      4: { halign: 'right', cellWidth: 24 },
+      5: { halign: 'right', cellWidth: 26 },
     },
   })
 
@@ -1136,6 +1261,7 @@ function _buildMultiSaidaPDF(dados, config = {}) {
     for (const a of (it.alocacoes || [])) {
       fifoRows.push([
         it.codigo_material || '—',
+        it.codigo_sankhia || '—',
         it.lote_poy || '—',
         a.numero_nf,
         a.data_emissao ? format(new Date(a.data_emissao), 'dd/MM/yyyy') : '—',
@@ -1156,10 +1282,10 @@ function _buildMultiSaidaPDF(dados, config = {}) {
     autoTable(pdoc, {
       startY: yFifo,
       margin: { left: 14, right: 14 },
-      head: [['Cód. Material', 'Lote POY', 'NF de Entrada', 'Emissão', 'Vol. Debitado']],
+      head: [['Cód. Material', 'Cód. Sankhia', 'Lote POY', 'NF de Entrada', 'Emissão', 'Vol. Debitado']],
       body: fifoRows,
       foot: [[
-        { content: 'TOTAL', colSpan: 4, styles: { fontStyle: 'bold' } },
+        { content: 'TOTAL', colSpan: 5, styles: { fontStyle: 'bold' } },
         { content: fmtVol(fifoTotal), styles: { fontStyle: 'bold', halign: 'right' } },
       ]],
       styles:     { fontSize: 8, cellPadding: 3 },
@@ -1167,11 +1293,12 @@ function _buildMultiSaidaPDF(dados, config = {}) {
       footStyles: { fillColor: LIGHT, textColor: DARK },
       alternateRowStyles: { fillColor: [245, 249, 255] },
       columnStyles: {
-        0: { fontStyle: 'bold', cellWidth: 28 },
-        1: { cellWidth: 22 },
-        2: { cellWidth: 32, fontStyle: 'bold' },
-        3: { cellWidth: 26 },
-        4: { halign: 'right', cellWidth: 'auto' },
+        0: { fontStyle: 'bold', cellWidth: 24 },
+        1: { fontStyle: 'bold', cellWidth: 22, textColor: MED },
+        2: { cellWidth: 20 },
+        3: { cellWidth: 28, fontStyle: 'bold' },
+        4: { cellWidth: 24 },
+        5: { halign: 'right', cellWidth: 'auto' },
       },
     })
   }
