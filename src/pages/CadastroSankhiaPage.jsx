@@ -171,23 +171,26 @@ export default function CadastroSankhiaPage() {
       const buf = await file.arrayBuffer()
       const wb  = XLSX.read(buf, { type: 'array' })
       const ws  = wb.Sheets[wb.SheetNames[0]]
-      const linhas = XLSX.utils.sheet_to_json(ws, { defval: '' })
-      // Normaliza chaves: mantém só ASCII imprimível (remove BOM, chars de controle), trim, upper
-      const normalizadas = linhas.map(row => {
-        const out = {}
-        for (const k of Object.keys(row)) {
-          const nk = String(k).replace(/[^\x20-\x7E]/g, '').trim().toUpperCase()
-          out[nk] = row[k]
-        }
-        return out
-      })
-      // Valida colunas mínimas
-      const temColunas = normalizadas.length > 0 && ('CODPROD' in normalizadas[0]) && ('COMPLDESC' in normalizadas[0])
-      if (!temColunas) {
-        const encontradas = normalizadas.length > 0 ? Object.keys(normalizadas[0]).join(', ') : 'nenhuma'
-        toast(`Planilha inválida — esperadas CODPROD e COMPLDESC. Encontradas: ${encontradas}`, 'error')
+      // Lê tudo como array para detectar a linha de cabeçalho dinamicamente
+      // (o arquivo Sankhia tem 2 linhas de metadados antes dos cabeçalhos reais)
+      const todasLinhas = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
+      const normalizar = s => String(s).replace(/[^\x20-\x7E]/g, '').trim().toUpperCase()
+      const headerIdx = todasLinhas.findIndex(row =>
+        row.some(c => normalizar(c) === 'CODPROD') &&
+        row.some(c => normalizar(c) === 'COMPLDESC')
+      )
+      if (headerIdx === -1) {
+        toast('Planilha inválida — colunas CODPROD e COMPLDESC não encontradas.', 'error')
         return
       }
+      const headers = todasLinhas[headerIdx].map(normalizar)
+      const normalizadas = todasLinhas.slice(headerIdx + 1)
+        .filter(row => row.some(c => c !== ''))
+        .map(row => {
+          const out = {}
+          headers.forEach((h, i) => { out[h] = row[i] ?? '' })
+          return out
+        })
       const { criados, atualizados, ignorados, erros } = await importarCodigosSankhiaXLSX(normalizadas, user, colecoes)
       toast(`Importação: ${criados} criados, ${atualizados} atualizados${ignorados ? `, ${ignorados} ignorados` : ''}${erros.length ? ` (${erros.length} erros)` : ''}`)
       load()
