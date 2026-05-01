@@ -47,7 +47,7 @@ body {
   box-shadow: 0 2px 20px rgba(0,0,0,0.5);
 }
 .header-inner {
-  max-width: 1200px; margin: 0 auto;
+  max-width: 1600px; margin: 0 auto;
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 20px; height: 60px;
 }
@@ -84,7 +84,7 @@ body {
 }
 
 /* ── MAIN ── */
-.main { max-width: 1200px; margin: 0 auto; padding: 28px 20px 60px; }
+.main { max-width: 1600px; margin: 0 auto; padding: 28px 20px 60px; }
 
 /* ── PAGE HEADER ── */
 .page-header { margin-bottom: 28px; }
