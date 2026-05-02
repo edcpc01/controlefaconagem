@@ -280,7 +280,7 @@ function Layout({ children }) {
 
           {/* Brand */}
           <div className="header-brand">
-            <img src="/logo.svg" alt="Logo" className="brand-icon" style={{width:34,height:34,borderRadius:7,display:'block'}} />
+            <img src="/logo.svg" alt="Logo" className="brand-icon" style={{width:30,height:30,borderRadius:6,display:'block'}} />
             <div>
               <div className="brand-title">Façonagem</div>
               <div className="brand-sub">Corradi Mazzer</div>
@@ -302,7 +302,7 @@ function Layout({ children }) {
           </nav>
 
           {/* Actions */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
             <div className="header-operacao-selector">
               <OperacaoSelector />
             </div>
