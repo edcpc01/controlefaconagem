@@ -6,8 +6,8 @@ import { useUser } from './UserContext'
 // ─────────────────────────────────────────────────────────────────
 
 export const OPERACOES = [
-  { id: 'rhodia', label: 'Façonagem Rhodia',  cor: '#1a5096' },
-  { id: 'nilit',  label: 'Façonagem Nilit',   cor: '#0e7c6b' },
+  { id: 'rhodia', label: 'Rhodia',  cor: '#1a5096' },
+  { id: 'nilit',  label: 'Nilit',   cor: '#0e7c6b' },
 ]
 
 // Mapeamento de coleções Firebase por operação
