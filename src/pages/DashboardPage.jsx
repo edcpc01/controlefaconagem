@@ -244,9 +244,12 @@ Responda SOMENTE em JSON, sem texto extra, sem markdown:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt })
       })
+      if (!res.ok) throw new Error(`Serviço indisponível (${res.status})`)
       const data = await res.json()
+      if (data.error) throw new Error(data.error)
       const texto = data.text || ''
-      const clean = texto.replace(/```json|```/g, '').trim()
+      const clean = texto.replace(/```json[\s\S]*?```|```/g, '').trim()
+      if (!clean) throw new Error('Resposta vazia da IA')
       const parsed = JSON.parse(clean)
       setAnomaliaResultado(parsed)
     } catch (e) {

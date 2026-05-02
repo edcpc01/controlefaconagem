@@ -12,7 +12,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
       manifestFilename: 'manifest.webmanifest',
-      includeAssets: ['favicon.ico', 'icon-144-new.png', 'icon-192-new.png', 'icon-256-new.png', 'icon-512-new.png', 'logo.svg'],
+      includeAssets: ['favicon.ico', 'icon-144.png', 'icon-192.png', 'icon-256.png', 'icon-512.png', 'logo.svg'],
       manifest: {
         name: 'Façonagem Corradi Mazzer - Controle de Entradas e Saídas',
         short_name: 'Façonagem',
@@ -24,11 +24,11 @@ export default defineConfig({
         scope: '/',
         start_url: '/',
         icons: [
-          { src: 'icon-144-new.png', sizes: '144x144', type: 'image/png', purpose: 'any' },
-          { src: 'icon-192-new.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-          { src: 'icon-256-new.png', sizes: '256x256', type: 'image/png', purpose: 'any' },
-          { src: 'icon-512-new.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-          { src: 'icon-512-new.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+          { src: 'icon-144.png', sizes: '144x144', type: 'image/png', purpose: 'any' },
+          { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icon-256.png', sizes: '256x256', type: 'image/png', purpose: 'any' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
         ]
       },
       workbox: {
