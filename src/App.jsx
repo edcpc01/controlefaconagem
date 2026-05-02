@@ -226,7 +226,6 @@ function Layout({ children }) {
   const ctx                     = useUser()
   const opCtx                   = useOperacao()
   const isAdmin             = ctx?.isAdmin ?? false
-  const isSupervisor        = ctx?.isSupervisor ?? false
   const isSupervisorCorradi = ctx?.isSupervisorCorradi ?? false
   const [nfsAlertaCount, setNfsAlertaCount] = useState(0)
 
@@ -263,27 +262,10 @@ function Layout({ children }) {
     }).catch(() => {})
   }, [ctx?.unidadeAtiva, opCtx?.operacaoAtiva])
 
-  const NAV_SUPERVISOR = [
-    { to: '/',           label: 'Dashboard',  icon: '◈', end: true },
-    { to: '/entrada',    label: 'NF Entrada', icon: '↓' },
-    { to: '/saida',      label: 'Saída',      icon: '↑' },
-    { to: '/kpis',        label: 'KPIs',       icon: '📊' },
-    { to: '/inventario',  label: 'Inventário', icon: '🔍' },
-    { to: '/mapa',        label: 'Mapa',       icon: '🌡️' },
-    { to: '/relatorios',  label: 'Relatórios', icon: '📑' },
-    { to: '/sankhia',     label: 'Sankhia',    icon: '🔗' },
-    { to: '/log',         label: 'Histórico',  icon: '📋' },
-    { to: '/config',      label: 'Config',     icon: '⚙' },
-  ]
-
-  const NAV_CORRADI = NAV_SUPERVISOR.filter(n => n.to !== '/config')
-
   const navItems = isAdmin
     ? [...NAV_BASE, { to: '/usuarios', label: 'Usuários', icon: Icons.Usuarios }]
     : isSupervisorCorradi
-    ? NAV_CORRADI
-    : isSupervisor
-    ? NAV_SUPERVISOR
+    ? NAV_BASE.filter(n => n.to !== '/config')
     : NAV_BASE
 
   const badgeFor = (to) => {
@@ -320,7 +302,7 @@ function Layout({ children }) {
           </nav>
 
           {/* Actions */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             <div className="header-operacao-selector">
               <OperacaoSelector />
             </div>
