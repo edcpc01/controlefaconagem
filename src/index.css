@@ -47,25 +47,37 @@ body {
   box-shadow: 0 2px 20px rgba(0,0,0,0.5);
 }
 .header-inner {
-  max-width: 1600px; margin: 0 auto;
+  max-width: 100%; margin: 0 auto;
   display: flex; align-items: center; justify-content: space-between;
-  padding: 0 20px; height: 60px;
+  padding: 0 20px; height: 64px;
 }
 .header-brand { display: flex; align-items: center; gap: 12px; }
 .brand-icon { font-size: 28px; color: var(--accent); line-height: 1; }
 .brand-title { font-size: 16px; font-weight: 700; color: var(--text); line-height: 1.1; }
 .brand-sub { font-size: 10px; color: var(--text-dim); letter-spacing: 0.05em; text-transform: uppercase; }
 
-.nav-desktop { display: flex; gap: 2px; flex-shrink: 0; overflow: visible; }
+.nav-desktop { 
+  display: flex; 
+  gap: 4px; 
+  margin: 0 20px;
+  flex: 1;
+  justify-content: center;
+}
 .nav-link {
-  display: flex; align-items: center; gap: 4px;
-  padding: 7px 10px; border-radius: 6px;
-  font-size: 12px; font-weight: 500; color: var(--text-dim);
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 12px; border-radius: 8px;
+  font-size: 13px; font-weight: 500; color: var(--text-dim);
   text-decoration: none; transition: all 0.2s; white-space: nowrap;
 }
 .nav-link:hover { background: rgba(58,114,216,0.15); color: var(--text); }
 .nav-link.active { background: rgba(34,85,184,0.3); color: var(--accent); border: 1px solid rgba(0,195,255,0.2); }
-.nav-icon { font-size: 14px; }
+.nav-icon { font-size: 16px; }
+
+@media (max-width: 1366px) {
+  .nav-link { padding: 8px; font-size: 0; } /* Hide text, keep icon */
+  .nav-icon { margin: 0; }
+  .brand-sub { display: none; }
+}
 
 .hamburger { display: none; background: none; border: none; color: var(--text); font-size: 22px; cursor: pointer; }
 .nav-mobile { padding: 8px 16px 12px; display: flex; flex-direction: column; gap: 4px; }
@@ -682,6 +694,11 @@ tr:hover td { background: rgba(34,85,184,0.08); }
   max-width: 180px;
 }
 .operacao-select option { background: var(--blue-800); color: var(--text); }
+
+@media (max-width: 1440px) {
+  .unidade-select { max-width: 100px; }
+  .operacao-select { max-width: 120px; }
+}
 
 .operacao-badge {
   display: flex; align-items: center; gap: 6px;
