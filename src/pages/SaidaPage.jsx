@@ -700,6 +700,46 @@ export default function SaidaPage() {
     toast('Romaneio Excel gerado!')
   }
 
+  const prepareMultiData = (romaneioMicrodata) => {
+    const itensSaida = saidas.filter(s => s.romaneio_microdata === romaneioMicrodata)
+    if (itensSaida.length === 0) return null
+    
+    return {
+      romaneio_microdata: romaneioMicrodata,
+      tipo_saida:         itensSaida[0].tipo_saida,
+      lote_acabado:       itensSaida[0].lote_acabado || '',
+      criado_em:          itensSaida[0].criado_em,
+      itens: itensSaida.map(it => {
+        const cod = it.codigo_material || it.codigo_produto
+        const todasAloc = it.alocacao_saida || []
+        return {
+          codigo_material:    cod,
+          codigo_sankhia:     it.codigo_sankhia || sankhiaDe(cod),
+          lote_poy:           it.lote_poy || it.lote_produto || '',
+          descricao_material: it.descricao_material || nfs.find(n => n.codigo_material === cod)?.descricao_material || '',
+          volume_liquido_kg:  it.volume_liquido_kg || it.volume_bruto_kg,
+          volume_abatido_kg:  it.volume_abatido_kg,
+          alocacoes:          todasAloc.filter(a => !a.codigo_material_companion),
+          alocacoesCompanion: todasAloc.filter(a => a.codigo_material_companion),
+        }
+      })
+    }
+  }
+
+  const handleGerarRomaneioCompletoPDF = (romaneioMicrodata) => {
+    const dados = prepareMultiData(romaneioMicrodata)
+    if (!dados) return
+    gerarMultiSaidaPDF(dados, config)
+    toast(`Romaneio completo ${romaneioMicrodata} PDF gerado!`)
+  }
+
+  const handleGerarRomaneioCompletoXLSX = (romaneioMicrodata) => {
+    const dados = prepareMultiData(romaneioMicrodata)
+    if (!dados) return
+    gerarMultiSaidaXLSX(dados, config)
+    toast(`Romaneio completo ${romaneioMicrodata} Excel gerado!`)
+  }
+
   // Envia romaneio individual por e-mail
   const handleEmailIndividual = async () => {
     if (!ultimaSaida) return
@@ -1335,6 +1375,15 @@ export default function SaidaPage() {
                             const alocComp  = todasAloc.filter(a =>  a.codigo_material_companion)
                             handleGerarXLSX(s, alocPrinc, alocComp)
                           }}>📊</button>
+                        <div style={{width:1, background:'var(--border)', margin:'0 4px'}} />
+                        <button className="btn btn-ghost btn-sm" title="Gerar Romaneio COMPLETO (PDF)"
+                          onClick={() => handleGerarRomaneioCompletoPDF(s.romaneio_microdata)}>
+                          <span style={{fontSize:14}}>📄</span><span style={{fontSize:8, marginLeft:1, fontWeight:700, color:'var(--accent)'}}>TUDO</span>
+                        </button>
+                        <button className="btn btn-ghost btn-sm" title="Gerar Romaneio COMPLETO (Excel)"
+                          onClick={() => handleGerarRomaneioCompletoXLSX(s.romaneio_microdata)}>
+                          <span style={{fontSize:14}}>📊</span><span style={{fontSize:8, marginLeft:1, fontWeight:700, color:'var(--accent)'}}>TUDO</span>
+                        </button>
                         {!readOnly && (
                         <button className="btn btn-ghost btn-sm" title="Excluir saída"
                           onClick={() => setConfirmDeleteSaida(s)}
