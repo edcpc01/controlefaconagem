@@ -1347,6 +1347,142 @@ export function gerarMultiSaidaPDF(dados, config = {}) {
   pdoc.save(`romaneio_multi_${dados.romaneio_microdata}_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`)
 }
 
+// ── 6. Romaneio XLSX (Exportação individual e múltipla) ──────────
+
+export function gerarRomaneioXLSX(saida, alocacoes, config = {}, alocacoesCompanion = []) {
+  const wb = XLSX.utils.book_new()
+  const tipoLbl = TIPOS_SAIDA.find(t => t.value === saida.tipo_saida)?.label || saida.tipo_saida
+  const fmtV = n => n != null ? Number(n) : 0
+
+  const rows = [
+    ['CORRADI MAZZER — FAÇONAGEM'],
+    ['ROMANEIO DE SAÍDA'],
+    [`Emitido em: ${format(new Date(), "dd/MM/yyyy HH:mm")}`],
+    [],
+    ['DADOS DO ROMANEIO'],
+    ['Romaneio Microdata', saida.romaneio_microdata || '—'],
+    ['Código do Material', saida.codigo_material || saida.codigo_produto || '—'],
+    ['Código Sankhia', saida.codigo_sankhia || '—'],
+    ['Descrição', saida.descricao_material || '—'],
+    ['Lote POY', saida.lote_poy || '—'],
+    ['Lote Acabado', saida.lote_acabado || '—'],
+    ['Tipo de Saída', tipoLbl],
+    ['Quantidade', saida.quantidade || '—'],
+    [],
+    ['VOLUMES'],
+    ['Volume Líquido (kg)', fmtV(saida.volume_liquido_kg || saida.volume_bruto_kg)],
+    ['Volume Bruto (kg)', fmtV(saida.volume_bruto_kg)],
+    ['Volume a Debitar do Estoque (kg)', fmtV(saida.volume_abatido_kg)],
+    [],
+    ['ALOCAÇÃO NAS NFs DE ENTRADA (FIFO)'],
+    ['NF de Entrada', 'Data de Emissão', 'Volume Alocado (kg)']
+  ]
+
+  alocacoes.forEach(a => {
+    rows.push([
+      a.numero_nf,
+      a.data_emissao ? format(new Date(a.data_emissao), 'dd/MM/yyyy') : '—',
+      fmtV(a.volume_alocado_kg)
+    ])
+  })
+
+  // Se houver companion (Óleo de Encimagem / Especial 135612)
+  if (alocacoesCompanion.length > 0) {
+    const isOleoNilit = saida.tipo_companion === 'oleo_encimagem_nilit'
+    rows.push([])
+    rows.push([isOleoNilit ? 'DETALHAMENTO ÓLEO DE ENCIMAGEM' : 'DETALHAMENTO ABATIMENTO ESPECIAL'])
+    rows.push(['Material', 'NF de Entrada', 'Data de Emissão', 'Volume Debitado (kg)'])
+    alocacoesCompanion.forEach(a => {
+      rows.push([
+        a.codigo_material_companion || a.codigo_material || '—',
+        a.numero_nf,
+        a.data_emissao ? format(new Date(a.data_emissao), 'dd/MM/yyyy') : '—',
+        fmtV(a.volume_alocado_kg)
+      ])
+    })
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(rows)
+  // Ajuste de colunas
+  ws['!cols'] = [{ wch: 30 }, { wch: 40 }, { wch: 20 }]
+  XLSX.utils.book_append_sheet(wb, ws, 'Romaneio')
+
+  XLSX.writeFile(wb, `romaneio_${saida.romaneio_microdata}_${format(new Date(), 'yyyyMMdd_HHmm')}.xlsx`)
+}
+
+export function gerarMultiSaidaXLSX(dados, config = {}) {
+  const wb = XLSX.utils.book_new()
+  const tipoLbl = TIPOS_SAIDA.find(t => t.value === dados.tipo_saida)?.label || dados.tipo_saida
+  const fmtV = n => n != null ? Number(n) : 0
+
+  // Aba 1: Resumo dos Itens
+  const resumoRows = [
+    ['ROMANEIO DE SAÍDA MÚLTIPLA — CORRADI MAZZER'],
+    [`Romaneio: ${dados.romaneio_microdata}`],
+    [`Tipo: ${tipoLbl}`],
+    [`Data: ${dados.criado_em ? format(new Date(dados.criado_em), "dd/MM/yyyy HH:mm") : format(new Date(), "dd/MM/yyyy HH:mm")}`],
+    [],
+    ['Cód. Material', 'Cód. Sankhia', 'Lote POY', 'Descrição', 'Volume Líquido', 'Volume Debitado']
+  ]
+
+  dados.itens.forEach(it => {
+    resumoRows.push([
+      it.codigo_material || '—',
+      it.codigo_sankhia || '—',
+      it.lote_poy || '—',
+      it.descricao_material || '—',
+      fmtV(it.volume_liquido_kg),
+      fmtV(it.volume_abatido_kg ?? it.volume_liquido_kg)
+    ])
+  })
+
+  const wsResumo = XLSX.utils.aoa_to_sheet(resumoRows)
+  wsResumo['!cols'] = [{wch:15}, {wch:15}, {wch:12}, {wch:35}, {wch:15}, {wch:15}]
+  XLSX.utils.book_append_sheet(wb, wsResumo, 'Resumo Itens')
+
+  // Aba 2: Detalhamento FIFO
+  const fifoRows = [['Cód. Material', 'Lote POY', 'NF Entrada', 'Data Emissão', 'Vol. Debitado (kg)']]
+  dados.itens.forEach(it => {
+    ;(it.alocacoes || []).forEach(a => {
+      fifoRows.push([
+        it.codigo_material || '—',
+        it.lote_poy || '—',
+        a.numero_nf,
+        a.data_emissao ? format(new Date(a.data_emissao), 'dd/MM/yyyy') : '—',
+        fmtV(a.volume_alocado_kg)
+      ])
+    })
+  })
+
+  const wsFIFO = XLSX.utils.aoa_to_sheet(fifoRows)
+  wsFIFO['!cols'] = [{wch:15}, {wch:12}, {wch:15}, {wch:15}, {wch:18}]
+  XLSX.utils.book_append_sheet(wb, wsFIFO, 'Detalhamento FIFO')
+
+  // Aba 3: Companion (se houver)
+  const compRows = [['Item (Mat.)', 'Material Companion', 'NF Entrada', 'Data Emissão', 'Vol. Debitado (kg)']]
+  let temComp = false
+  dados.itens.forEach(it => {
+    ;(it.alocacoesCompanion || []).forEach(a => {
+      temComp = true
+      compRows.push([
+        it.codigo_material || '—',
+        a.codigo_material_companion || a.codigo_material || '—',
+        a.numero_nf,
+        a.data_emissao ? format(new Date(a.data_emissao), 'dd/MM/yyyy') : '—',
+        fmtV(a.volume_alocado_kg)
+      ])
+    })
+  })
+
+  if (temComp) {
+    const wsComp = XLSX.utils.aoa_to_sheet(compRows)
+    wsComp['!cols'] = [{wch:15}, {wch:20}, {wch:15}, {wch:15}, {wch:18}]
+    XLSX.utils.book_append_sheet(wb, wsComp, 'Detalhamento Companion')
+  }
+
+  XLSX.writeFile(wb, `romaneio_multi_${dados.romaneio_microdata}_${format(new Date(), 'yyyyMMdd_HHmm')}.xlsx`)
+}
+
 
 
 // ─────────────────────────────────────────────────────────────────

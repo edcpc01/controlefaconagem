@@ -3,7 +3,7 @@ import {
   listarSaidas, criarSaida, deletarSaida, listarNFsEntrada, previewFIFO,
   TIPOS_SAIDA, TIPOS_COM_ABATIMENTO,
   calcularVolumeAbatido, getPercentualAbatimento, MATERIAL_ESPECIAL_135612, MATERIAL_OLEO_ENCIMAGEM_NILIT,
-  gerarRomaneioPDF, gerarRomaneioBase64, gerarMultiSaidaPDF, exportarExcel, carregarConfig,
+  gerarRomaneioPDF, gerarRomaneioBase64, gerarMultiSaidaPDF, gerarRomaneioXLSX, gerarMultiSaidaXLSX, exportarExcel, carregarConfig,
   carregarMapaSankhia,
 } from '../lib/faconagem'
 import { useAuth } from '../lib/AuthContext'
@@ -251,7 +251,7 @@ function ConfirmacaoModal({ form, preview, previewsCompanion, previewOleoEncimag
 }
 
 // ── Modal de Sucesso ───────────────────────────────────────────────────────
-function SucessoModal({ ultimaSaida, onClose, onPDF, codigoSankhia }) {
+function SucessoModal({ ultimaSaida, onClose, onPDF, onXLS, codigoSankhia }) {
   const s            = ultimaSaida.saida
   const alocComp     = ultimaSaida.alocacoesCompanion || []
   const isEsp135612  = s.tipo_companion === 'rhodia_135612' || (s.codigo_material === MATERIAL_ESPECIAL_135612.codigo && s.tipo_companion !== 'oleo_encimagem_nilit')
@@ -380,7 +380,10 @@ function SucessoModal({ ultimaSaida, onClose, onPDF, codigoSankhia }) {
 
         <div className="modal-actions" style={{marginTop:16}}>
           <button className="btn btn-ghost" onClick={onClose}>Fechar</button>
-          <button className="btn btn-success" onClick={onPDF}>📄 Gerar PDF</button>
+          <div style={{display:'flex', gap:8}}>
+            <button className="btn btn-success" onClick={onPDF}>📄 PDF</button>
+            <button className="btn" style={{background:'var(--accent-2)', color:'#fff'}} onClick={onXLS}>📊 Excel</button>
+          </div>
         </div>
       </div>
     </div>
@@ -685,6 +688,16 @@ export default function SaidaPage() {
     const codigo_sankhia = saida.codigo_sankhia || sankhiaDe(cod)
     gerarRomaneioPDF({ ...saida, descricao_material, codigo_sankhia }, alocacoes, config, alocacoesCompanion)
     toast('Romaneio PDF gerado!')
+  }
+
+  const handleGerarXLSX = (saida, alocacoes, alocacoesCompanion = []) => {
+    const cod = saida.codigo_material || saida.codigo_produto
+    const descricao_material = saida.descricao_material
+      || nfs.find(n => n.codigo_material === cod)?.descricao_material
+      || ''
+    const codigo_sankhia = saida.codigo_sankhia || sankhiaDe(cod)
+    gerarRomaneioXLSX({ ...saida, descricao_material, codigo_sankhia }, alocacoes, config, alocacoesCompanion)
+    toast('Romaneio Excel gerado!')
   }
 
   // Envia romaneio individual por e-mail
@@ -1220,7 +1233,16 @@ export default function SaidaPage() {
                   itens:              multiResultado.itens,
                   criado_em:          new Date().toISOString(),
                 }, config)}>
-                  📄 Baixar Romaneio PDF
+                  📄 PDF
+                </button>
+                <button className="btn btn-sm" style={{background:'var(--accent-2)', color:'#fff'}} onClick={() => gerarMultiSaidaXLSX({
+                  romaneio_microdata: multiForm.romaneio_microdata,
+                  tipo_saida:         multiForm.tipo_saida,
+                  lote_acabado:       multiForm.lote_acabado,
+                  itens:              multiResultado.itens,
+                  criado_em:          new Date().toISOString(),
+                }, config)}>
+                  📊 Excel
                 </button>
                 <button className="btn btn-ghost btn-sm" onClick={resetMulti}>Nova multi-saída</button>
               </div>
@@ -1306,6 +1328,13 @@ export default function SaidaPage() {
                             const alocComp  = todasAloc.filter(a =>  a.codigo_material_companion)
                             handleGerarPDF(s, alocPrinc, alocComp)
                           }}>📄</button>
+                        <button className="btn btn-ghost btn-sm" title="Gerar Romaneio Excel"
+                          onClick={() => {
+                            const todasAloc = s.alocacao_saida || []
+                            const alocPrinc = todasAloc.filter(a => !a.codigo_material_companion)
+                            const alocComp  = todasAloc.filter(a =>  a.codigo_material_companion)
+                            handleGerarXLSX(s, alocPrinc, alocComp)
+                          }}>📊</button>
                         {!readOnly && (
                         <button className="btn btn-ghost btn-sm" title="Excluir saída"
                           onClick={() => setConfirmDeleteSaida(s)}
@@ -1340,6 +1369,7 @@ export default function SaidaPage() {
           ultimaSaida={ultimaSaida}
           onClose={() => setUltimaSaida(null)}
           onPDF={() => handleGerarPDF(ultimaSaida.saida, ultimaSaida.alocacoes, ultimaSaida.alocacoesCompanion || [])}
+          onXLS={() => handleGerarXLSX(ultimaSaida.saida, ultimaSaida.alocacoes, ultimaSaida.alocacoesCompanion || [])}
           codigoSankhia={sankhiaDe(ultimaSaida.saida.codigo_material || ultimaSaida.saida.codigo_produto)}
         />
       )}
