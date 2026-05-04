@@ -239,18 +239,17 @@ Responda SOMENTE em JSON, sem texto extra, sem markdown:
   "resumo": "frase curta de 1-2 linhas em português sobre o estado geral"
 }`
 
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch('/api/gemini', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
-          messages: [{ role: 'user', content: prompt }]
-        })
+        body: JSON.stringify({ prompt })
       })
+      if (!res.ok) throw new Error(`Serviço indisponível (${res.status})`)
       const data = await res.json()
-      const texto = data.content?.find(b => b.type === 'text')?.text || ''
-      const clean = texto.replace(/```json|```/g, '').trim()
+      if (data.error) throw new Error(data.error)
+      const texto = data.text || ''
+      const clean = texto.replace(/```json[\s\S]*?```|```/g, '').trim()
+      if (!clean) throw new Error('Resposta vazia da IA')
       const parsed = JSON.parse(clean)
       setAnomaliaResultado(parsed)
     } catch (e) {
