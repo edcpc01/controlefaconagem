@@ -1224,37 +1224,6 @@ function _buildMultiSaidaPDF(dados, config = {}) {
     : format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR }), col2, y)
   y += 14
 
-  // ── Tabela de itens ──
-  autoTable(pdoc, {
-    startY: y,
-    margin: { left: 14, right: 14 },
-    head: [['Cód. Material', 'Cód. Sankhia', 'Lote POY', 'Descrição', 'Volume Líq.', temAbat ? 'Vol. Debitado' : 'Volume']],
-    body: dados.itens.map(it => [
-      it.codigo_material || '—',
-      it.codigo_sankhia || '—',
-      it.lote_poy || '—',
-      it.descricao_material || '—',
-      fmtVol(it.volume_liquido_kg),
-      fmtVol(it.volume_abatido_kg ?? it.volume_liquido_kg),
-    ]),
-    foot: [[
-      { content: `Total — ${dados.itens.length} item(ns)`, colSpan: 4, styles: { fontStyle: 'bold' } },
-      { content: fmtVol(totalLiq), styles: { fontStyle: 'bold', halign: 'right' } },
-      { content: fmtVol(totalFin), styles: { fontStyle: 'bold', halign: 'right', textColor: MED } },
-    ]],
-    styles:     { fontSize: 9, cellPadding: 4 },
-    headStyles: { fillColor: DARK, textColor: WHITE, fontStyle: 'bold' },
-    footStyles: { fillColor: LIGHT, textColor: DARK },
-    alternateRowStyles: { fillColor: [245, 249, 255] },
-    columnStyles: {
-      0: { fontStyle: 'bold', cellWidth: 24 },
-      1: { fontStyle: 'bold', cellWidth: 22, textColor: MED },
-      2: { cellWidth: 20 },
-      3: { cellWidth: 'auto' },
-      4: { halign: 'right', cellWidth: 24 },
-      5: { halign: 'right', cellWidth: 26 },
-    },
-  })
 
   // ── Detalhamento FIFO — NFs de origem por item ──
   const fifoRows = []
@@ -1264,6 +1233,7 @@ function _buildMultiSaidaPDF(dados, config = {}) {
       fifoRows.push([
         it.codigo_material || '—',
         it.codigo_sankhia || '—',
+        it.descricao_material || '—',
         it.lote_poy || '—',
         a.numero_nf,
         a.data_emissao ? format(new Date(a.data_emissao), 'dd/MM/yyyy') : '—',
@@ -1274,7 +1244,7 @@ function _buildMultiSaidaPDF(dados, config = {}) {
   }
 
   if (fifoRows.length > 0) {
-    let yFifo = pdoc.lastAutoTable.finalY + 8
+    let yFifo = y
     pdoc.setFillColor(...DARK); pdoc.setTextColor(...WHITE)
     pdoc.setFontSize(10); pdoc.setFont('helvetica', 'bold')
     pdoc.roundedRect(14, yFifo, W - 28, 9, 2, 2, 'F')
@@ -1284,23 +1254,24 @@ function _buildMultiSaidaPDF(dados, config = {}) {
     autoTable(pdoc, {
       startY: yFifo,
       margin: { left: 14, right: 14 },
-      head: [['Cód. Material', 'Cód. Sankhia', 'Lote POY', 'NF de Entrada', 'Emissão', 'Vol. Debitado']],
+      head: [['Cód. Material', 'Cód. Sankhia', 'Descrição', 'Lote POY', 'NF de Entrada', 'Emissão', 'Vol. Debitado']],
       body: fifoRows,
       foot: [[
-        { content: 'TOTAL', colSpan: 5, styles: { fontStyle: 'bold' } },
+        { content: 'TOTAL', colSpan: 6, styles: { fontStyle: 'bold' } },
         { content: fmtVol(fifoTotal), styles: { fontStyle: 'bold', halign: 'right' } },
       ]],
-      styles:     { fontSize: 8, cellPadding: 3 },
+      styles:     { fontSize: 8, cellPadding: 2.5 },
       headStyles: { fillColor: MED, textColor: WHITE, fontStyle: 'bold' },
       footStyles: { fillColor: LIGHT, textColor: DARK },
       alternateRowStyles: { fillColor: [245, 249, 255] },
       columnStyles: {
-        0: { fontStyle: 'bold', cellWidth: 24 },
-        1: { fontStyle: 'bold', cellWidth: 22, textColor: MED },
-        2: { cellWidth: 20 },
-        3: { cellWidth: 28, fontStyle: 'bold' },
-        4: { cellWidth: 24 },
-        5: { halign: 'right', cellWidth: 'auto' },
+        0: { fontStyle: 'bold', cellWidth: 20 },
+        1: { fontStyle: 'bold', cellWidth: 18, textColor: MED },
+        2: { cellWidth: 'auto' },
+        3: { cellWidth: 16 },
+        4: { cellWidth: 22, fontStyle: 'bold' },
+        5: { cellWidth: 20 },
+        6: { halign: 'right', cellWidth: 20 },
       },
     })
   }
