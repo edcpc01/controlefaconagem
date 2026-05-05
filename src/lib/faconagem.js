@@ -903,6 +903,7 @@ function _buildRomaneioPDF(saida, alocacoes, config = {}, alocacoesCompanion = [
       tipo_saida:         saida.tipo_saida,
       lote_acabado:       saida.lote_acabado || '',
       criado_em:          saida.criado_em,
+      codigo_sankhia_oleo: saida.codigo_sankhia_oleo || '',
       itens: [{
         codigo_material:    saida.codigo_material || saida.codigo_produto || '—',
         codigo_sankhia:     saida.codigo_sankhia || '',
@@ -1110,7 +1111,8 @@ function _buildRomaneioPDF(saida, alocacoes, config = {}, alocacoesCompanion = [
     const volOleoTotal = saida.volume_abatimento_kg
       ? fmtKg(saida.volume_abatimento_kg)
       : fmtKg(alocacoesCompanion.reduce((s, a) => s + Number(a.volume_alocado_kg), 0))
-    pdoc.text(`ÓLEO DE ENCIMAGEM (${percLblPDF}) — ${MATERIAL_OLEO_ENCIMAGEM_NILIT.codigo} ${MATERIAL_OLEO_ENCIMAGEM_NILIT.descricao} — ${volOleoTotal}`, W / 2, y + 6, { align: 'center' })
+    const skOleoLbl = saida.codigo_sankhia_oleo ? ` (SK ${saida.codigo_sankhia_oleo})` : ''
+    pdoc.text(`ÓLEO DE ENCIMAGEM (${percLblPDF}) — ${MATERIAL_OLEO_ENCIMAGEM_NILIT.codigo}${skOleoLbl} ${MATERIAL_OLEO_ENCIMAGEM_NILIT.descricao} — ${volOleoTotal}`, W / 2, y + 6, { align: 'center' })
     y += 11
 
     autoTable(pdoc, {
@@ -1324,7 +1326,8 @@ function _buildMultiSaidaPDF(dados, config = {}) {
     pdoc.setFillColor(...AMBER); pdoc.setTextColor(...WHITE)
     pdoc.setFontSize(9); pdoc.setFont('helvetica', 'bold')
     pdoc.roundedRect(14, yOleo, W - 28, 9, 2, 2, 'F')
-    pdoc.text(`ÓLEO DE ENCIMAGEM — ${MATERIAL_OLEO_ENCIMAGEM_NILIT.codigo} ${MATERIAL_OLEO_ENCIMAGEM_NILIT.descricao}`, W / 2, yOleo + 6, { align: 'center' })
+    const skOleoLblMulti = dados.codigo_sankhia_oleo ? ` (SK ${dados.codigo_sankhia_oleo})` : ''
+    pdoc.text(`ÓLEO DE ENCIMAGEM — ${MATERIAL_OLEO_ENCIMAGEM_NILIT.codigo}${skOleoLblMulti} ${MATERIAL_OLEO_ENCIMAGEM_NILIT.descricao}`, W / 2, yOleo + 6, { align: 'center' })
     yOleo += 11
 
     autoTable(pdoc, {
@@ -1389,8 +1392,11 @@ export function gerarRomaneioXLSX(saida, alocacoes, config = {}, alocacoesCompan
   // Se houver companion (Óleo de Encimagem / Especial 135612)
   if (alocacoesCompanion.length > 0) {
     const isOleoNilit = saida.tipo_companion === 'oleo_encimagem_nilit'
+    const skOleoLblXLSX = saida.codigo_sankhia_oleo ? ` (SK ${saida.codigo_sankhia_oleo})` : ''
     rows.push([])
-    rows.push([isOleoNilit ? 'DETALHAMENTO ÓLEO DE ENCIMAGEM' : 'DETALHAMENTO ABATIMENTO ESPECIAL'])
+    rows.push([isOleoNilit
+      ? `DETALHAMENTO ÓLEO DE ENCIMAGEM — ${MATERIAL_OLEO_ENCIMAGEM_NILIT.codigo}${skOleoLblXLSX} ${MATERIAL_OLEO_ENCIMAGEM_NILIT.descricao}`
+      : 'DETALHAMENTO ABATIMENTO ESPECIAL'])
     rows.push(['Material', 'NF de Entrada', 'Data de Emissão', 'Volume Debitado (kg)'])
     alocacoesCompanion.forEach(a => {
       rows.push([
@@ -1459,7 +1465,12 @@ export function gerarMultiSaidaXLSX(dados, config = {}) {
   XLSX.utils.book_append_sheet(wb, wsFIFO, 'Detalhamento FIFO')
 
   // Aba 3: Companion (se houver)
-  const compRows = [['Item (Mat.)', 'Material Companion', 'NF Entrada', 'Data Emissão', 'Vol. Debitado (kg)']]
+  const compRows = []
+  if (dados.codigo_sankhia_oleo) {
+    compRows.push([`ÓLEO DE ENCIMAGEM — ${MATERIAL_OLEO_ENCIMAGEM_NILIT.codigo} (SK ${dados.codigo_sankhia_oleo}) ${MATERIAL_OLEO_ENCIMAGEM_NILIT.descricao}`])
+    compRows.push([])
+  }
+  compRows.push(['Item (Mat.)', 'Material Companion', 'NF Entrada', 'Data Emissão', 'Vol. Debitado (kg)'])
   let temComp = false
   dados.itens.forEach(it => {
     ;(it.alocacoesCompanion || []).forEach(a => {

@@ -686,7 +686,8 @@ export default function SaidaPage() {
       || nfs.find(n => n.codigo_material === cod)?.descricao_material
       || ''
     const codigo_sankhia = saida.codigo_sankhia || sankhiaDe(cod)
-    gerarRomaneioPDF({ ...saida, descricao_material, codigo_sankhia }, alocacoes, config, alocacoesCompanion)
+    const codigo_sankhia_oleo = sankhiaDe(MATERIAL_OLEO_ENCIMAGEM_NILIT.codigo)
+    gerarRomaneioPDF({ ...saida, descricao_material, codigo_sankhia, codigo_sankhia_oleo }, alocacoes, config, alocacoesCompanion)
     toast('Romaneio PDF gerado!')
   }
 
@@ -696,7 +697,8 @@ export default function SaidaPage() {
       || nfs.find(n => n.codigo_material === cod)?.descricao_material
       || ''
     const codigo_sankhia = saida.codigo_sankhia || sankhiaDe(cod)
-    gerarRomaneioXLSX({ ...saida, descricao_material, codigo_sankhia }, alocacoes, config, alocacoesCompanion)
+    const codigo_sankhia_oleo = sankhiaDe(MATERIAL_OLEO_ENCIMAGEM_NILIT.codigo)
+    gerarRomaneioXLSX({ ...saida, descricao_material, codigo_sankhia, codigo_sankhia_oleo }, alocacoes, config, alocacoesCompanion)
     toast('Romaneio Excel gerado!')
   }
 
@@ -709,6 +711,7 @@ export default function SaidaPage() {
       tipo_saida:         itensSaida[0].tipo_saida,
       lote_acabado:       itensSaida[0].lote_acabado || '',
       criado_em:          itensSaida[0].criado_em,
+      codigo_sankhia_oleo: sankhiaDe(MATERIAL_OLEO_ENCIMAGEM_NILIT.codigo),
       itens: itensSaida.map(it => {
         const cod = it.codigo_material || it.codigo_produto
         const todasAloc = it.alocacao_saida || []
@@ -751,8 +754,9 @@ export default function SaidaPage() {
         || nfs.find(n => n.codigo_material === codMat)?.descricao_material
         || ''
       const codigo_sankhia = ultimaSaida.saida.codigo_sankhia || sankhiaDe(codMat)
+      const codigo_sankhia_oleo = sankhiaDe(MATERIAL_OLEO_ENCIMAGEM_NILIT.codigo)
       const pdfBase64 = gerarRomaneioBase64(
-        { ...ultimaSaida.saida, descricao_material, codigo_sankhia },
+        { ...ultimaSaida.saida, descricao_material, codigo_sankhia, codigo_sankhia_oleo },
         ultimaSaida.alocacoes,
         config,
         ultimaSaida.alocacoesCompanion || []
