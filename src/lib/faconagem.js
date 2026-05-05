@@ -950,9 +950,8 @@ function _buildRomaneioPDF(saida, alocacoes, config = {}, alocacoesCompanion = [
   let y = headerH + 8
 
   // ── Dados do Romaneio ──────────────────────────────────
-  // Calcula altura do box dinamicamente
-  const hasOpcional = !!(saida.lote_acabado || saida.quantidade)
-  const boxH = 14 + 14 + 14 + (hasOpcional ? 14 : 0)
+  // Box fixo com 3 linhas × 3 colunas
+  const boxH = 7 + 14 + 14 + 14 + 4
   pdoc.setFillColor(...LIGHT)
   pdoc.roundedRect(14, y, W - 28, boxH, 3, 3, 'F')
 
@@ -960,25 +959,35 @@ function _buildRomaneioPDF(saida, alocacoes, config = {}, alocacoesCompanion = [
     pdoc.setFont('helvetica', 'bold'); pdoc.setFontSize(8); pdoc.setTextColor(...GRAY)
     pdoc.text(lbl, cx, cy)
     pdoc.setFont('helvetica', 'normal'); pdoc.setTextColor(...DARK)
-    pdoc.text(String(val ?? '—'), cx, cy + 5)
+    // Trunca o valor para não ultrapassar a coluna vizinha (~55mm por coluna)
+    const maxW = 54
+    const txt = String(val ?? '—')
+    const lines = pdoc.splitTextToSize(txt, maxW)
+    pdoc.text(lines[0], cx, cy + 5)
   }
 
-  const col1 = 20, col2 = W / 2 + 4
-  const codigoMaterialDisplay = saida.codigo_sankhia
-    ? `${codigoMaterial}  (SK ${saida.codigo_sankhia})`
-    : codigoMaterial
+  const col1 = 20
+  const col2 = col1 + (W - 28) / 3
+  const col3 = col1 + 2 * (W - 28) / 3
+
   y += 7
-  linha('Romaneio Microdata',    saida.romaneio_microdata,  col1, y)
-  linha('Código do Material',    codigoMaterialDisplay,     col2, y)
+  // Linha 1: Romaneio | Cód. Material | Cód. Sankhia
+  linha('Romaneio',       saida.romaneio_microdata,             col1, y)
+  linha('Cód. Material',  codigoMaterial,                       col2, y)
+  linha('Cód. Sankhia',   saida.codigo_sankhia || '—',          col3, y)
   y += 14
-  linha('Lote POY',              saida.lote_poy || '—',     col1, y)
-  linha('Tipo de Saída',         tipoLbl,                   col2, y)
+  // Linha 2: Descrição | Lote POY | Tipo de Saída
+  linha('Descrição',      saida.descricao_material || '—',      col1, y)
+  linha('Lote POY',       saida.lote_poy || '—',               col2, y)
+  linha('Tipo de Saída',  tipoLbl,                              col3, y)
   y += 14
-  if (saida.lote_acabado || saida.quantidade) {
-    if (saida.lote_acabado) linha('Lote Acabado', saida.lote_acabado, col1, y)
-    if (saida.quantidade)   linha('Quantidade',   saida.quantidade,  col2, y)
-    y += 14
-  }
+  // Linha 3: Descrição Acabado | Lote Acabado | Volume Líquido (Faturar)
+  linha('Descrição Acabado', saida.descricao_acabado || '—',   col1, y)
+  linha('Lote Acabado',      saida.lote_acabado || '—',        col2, y)
+  linha('Volume Líquido (Faturar)', saida.volume_liquido_kg != null
+    ? Number(saida.volume_liquido_kg).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' kg'
+    : '—',                                                     col3, y)
+  y += 14
 
   y += 4  // padding após o box
 
