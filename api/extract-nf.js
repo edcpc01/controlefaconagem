@@ -19,8 +19,8 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end()
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
 
-  const apiKey = process.env.OPENROUTER_API_KEY
-  if (!apiKey) return res.status(500).json({ error: 'OPENROUTER_API_KEY não configurada na Vercel.' })
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY não configurada na Vercel.' })
 
   const { base64Data, pdfText: pdfTextDireto, imageBase64, operacao } = req.body
 
@@ -77,42 +77,39 @@ REGRAS:
 - Múltiplos produtos → retorne todos no array "itens".`
 
   try {
-    const userContent = usarVision
-      ? [
-          { type: 'text', text: promptTexto },
-          { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageBase64}` } },
-        ]
-      : `${promptTexto}\n\nTEXTO DA NOTA FISCAL:\n${textoNF.slice(0, 5000)}`
+    const systemInstruction = 'Você é um extrator de dados de Notas Fiscais brasileiras. Retorne APENAS JSON válido, sem markdown, sem texto adicional.'
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'HTTP-Referer': 'https://controlefaconagem.vercel.app',
-        'X-Title': 'Façonagem Corradi Mazzer',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        max_tokens: 4096,
-        temperature: 0,
-        messages: [
-          {
-            role: 'system',
-            content: 'Você é um extrator de dados de Notas Fiscais brasileiras. Retorne APENAS JSON válido, sem markdown, sem texto adicional.'
-          },
-          { role: 'user', content: userContent }
+    const parts = usarVision
+      ? [
+          { text: promptTexto },
+          { inline_data: { mime_type: 'image/jpeg', data: imageBase64 } },
         ]
+      : [{ text: `${promptTexto}\n\nTEXTO DA NOTA FISCAL:\n${textoNF.slice(0, 5000)}` }]
+
+    const model = 'gemini-2.5-flash'
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: systemInstruction }] },
+        contents: [{ role: 'user', parts }],
+        generationConfig: {
+          temperature: 0,
+          maxOutputTokens: 4096,
+          responseMimeType: 'application/json',
+        },
       })
     })
 
     if (!response.ok) {
       const err = await response.text()
-      return res.status(response.status).json({ error: `OpenRouter: ${err.slice(0, 300)}` })
+      return res.status(response.status).json({ error: `Gemini: ${err.slice(0, 300)}` })
     }
 
     const data = await response.json()
-    const content = (data.choices?.[0]?.message?.content || '').trim()
+    const content = (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim()
     const clean = content.replace(/```json\s*/gi, '').replace(/```/g, '').trim()
 
     let parsed

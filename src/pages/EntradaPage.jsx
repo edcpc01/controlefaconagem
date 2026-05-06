@@ -323,7 +323,7 @@ export default function EntradaPage() {
         toast('Dados extraídos com sucesso! Confira os campos.')
       }
     } catch (e) {
-      const msg = e.message?.includes('OPENROUTER_API_KEY') || e.message?.includes('ANTHROPIC_API_KEY')
+      const msg = e.message?.includes('GEMINI_API_KEY') || e.message?.includes('OPENROUTER_API_KEY') || e.message?.includes('ANTHROPIC_API_KEY')
         ? '⚠ Chave da API não configurada na Vercel.'
         : `Erro na extração: ${e.message}`
       toast(msg, 'error')
