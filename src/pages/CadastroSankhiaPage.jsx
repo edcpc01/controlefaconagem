@@ -16,8 +16,8 @@ const EMPTY_FORM = { codigo_material: '', codigo_sankhia: '', descricao_sankhia:
 
 export default function CadastroSankhiaPage() {
   const { user } = useAuth()
-  const { isSupervisor, isSupervisorCorradi } = useUser() || {}
-  const readOnly = isSupervisor || isSupervisorCorradi
+  const { isSupervisor } = useUser() || {}
+  const readOnly = isSupervisor
   const { colecoes, operacaoInfo } = useOperacao() || {}
 
   const [lista, setLista]         = useState([])
