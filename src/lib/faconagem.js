@@ -1004,6 +1004,7 @@ function _buildRomaneioPDF(saida, alocacoes, config = {}, alocacoesCompanion = [
   if (saida.volume_bruto_kg && saida.volume_bruto_kg !== saida.volume_liquido_kg) {
     linha('Volume Bruto', fmtKg(saida.volume_bruto_kg), col2, y)
   }
+  linha('Quantidade', saida.quantidade || '—', col3, y)
   y += 14
 
   const percAbatPDF   = saida.percentual_abatimento || PERCENTUAL_ABATIMENTO
